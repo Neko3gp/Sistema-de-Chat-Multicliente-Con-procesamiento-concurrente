@@ -3,6 +3,10 @@
 Transporte: **WebSocket** (`ws://<host>:5000`). Todo mensaje es un objeto JSON
 en texto plano, con un campo `type` obligatorio que indica de qué se trata.
 
+La lectura inicial del handshake tiene un timeout de **10 segundos**. Si expira
+o el handshake falla, se cierra la conexión. Después de un handshake exitoso,
+se elimina ese timeout para permitir sesiones inactivas.
+
 ## Cliente → Servidor
 
 ### Login
@@ -34,6 +38,11 @@ en texto plano, con un campo `type` obligatorio que indica de qué se trata.
   "data": "<contenido en base64>"
 }
 ```
+
+El archivo decodificado puede pesar como máximo **5 MiB (5 242 880 bytes)**.
+Si supera ese límite, se responde `{"type":"error","reason":"file_too_large"}`
+sin reenviar el archivo. Si `data` falta o no contiene base64 válido, se responde
+`{"type":"error","reason":"invalid_message"}`.
 
 ## Servidor → Cliente
 
@@ -80,7 +89,7 @@ Si las credenciales no son válidas:
 ```
 Valores posibles de `reason` (agregar más conforme se necesiten):
 `username_taken`, `invalid_credentials`, `user_not_found`,
-`authentication_required`, `invalid_message`, `message_too_large`.
+`authentication_required`, `invalid_message`, `message_too_large`, `file_too_large`.
 
 ## Notas para el frontend
 
