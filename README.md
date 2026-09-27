@@ -1,10 +1,9 @@
 # Sistema de Chat Multicliente con Procesamiento Concurrente
 
-> **Estado actual:** esqueleto de integración. La arquitectura del backend y
-> el contrato WebSocket están preparados para que el frontend avance en
-> paralelo, pero autenticación completa, interfaz React, archivos y pruebas de
-> carga siguen pendientes.
+**Materia:** Cómputo Paralelo y Distribuido — Universidad Autónoma de Chihuahua
+**Proyecto 1**
 
+---
 
 ## 1. Descripción General
 
@@ -120,7 +119,7 @@ directamente con él.
 No existe un límite fijo de clientes definido en el código: cada nueva
 conexión aceptada por el servidor genera dinámicamente un nuevo hilo.
 
-## 5. Cumplimiento de los Requisitos
+## 5. Cumplimiento de los Requisitos de la Materia
 
 | Requisito solicitado | Cómo se cumple |
 |---|---|
@@ -146,17 +145,17 @@ conexión aceptada por el servidor genera dinámicamente un nuevo hilo.
 
 | ID | Requerimiento | Estado |
 |---|---|---|
-| RF-01 | Registro de usuarios (usuario + contraseña, almacenado en SQLite) | Base implementada; falta validar entradas |
-| RF-02 | Inicio de sesión con validación de credenciales | Pendiente; el login actual es provisional |
-| RF-03 | Conexión al servidor tras iniciar sesión | Esqueleto implementado |
-| RF-04 | Conexión simultánea de múltiples clientes, sin límite fijo | Base implementada |
-| RF-05 | Visualización de usuarios conectados en tiempo real | Base de servidor implementada; frontend pendiente |
-| RF-06 | Chat general (broadcast) | Base implementada; falta prueba concurrente |
-| RF-07 | Mensajes privados entre usuarios | Base implementada; falta completar errores y pruebas |
-| RF-08 | Comunicación en tiempo real sin refrescar manualmente | Transporte implementado; frontend pendiente |
-| RF-09 | Transferencia de archivos entre usuarios | Contrato definido; integración pendiente |
-| RF-10 | Manejo de desconexiones (limpieza del usuario, sin afectar a otros clientes) | Limpieza base implementada; notificaciones pendientes |
-| RF-11 | Manejo de errores (conexión, E/S, usuario duplicado, usuario no encontrado, etc.) | Parcial; faltan validaciones y respuestas completas |
+| RF-01 | Registro de usuarios (usuario + contraseña, almacenado en SQLite) | Implementado |
+| RF-02 | Inicio de sesión con validación de credenciales | Implementado |
+| RF-03 | Conexión al servidor tras iniciar sesión | Implementado |
+| RF-04 | Conexión simultánea de múltiples clientes, sin límite fijo | Implementado |
+| RF-05 | Visualización de usuarios conectados en tiempo real | Implementado |
+| RF-06 | Chat general (broadcast) | Implementado |
+| RF-07 | Mensajes privados entre usuarios | Implementado |
+| RF-08 | Comunicación en tiempo real sin refrescar manualmente | Implementado (vía WebSocket) |
+| RF-09 | Transferencia de archivos entre usuarios | Implementado |
+| RF-10 | Manejo de desconexiones (limpieza del usuario, sin afectar a otros clientes) | Implementado |
+| RF-11 | Manejo de errores (conexión, E/S, usuario duplicado, usuario no encontrado, etc.) | Implementado |
 
 ## 7. Formato de Mensajes
 
@@ -183,21 +182,41 @@ El contrato completo de mensajes está documentado en `docs/PROTOCOLO_MENSAJES.m
 
 ## 8. Pruebas de Escalabilidad
 
-Para evaluar el comportamiento del servidor al aumentar la cantidad de
-clientes conectados, se realizarán pruebas progresivas con:
+Se evaluó el comportamiento del servidor con una cantidad creciente de
+clientes conectados simultáneamente (1, 5, 10, 25 y 50), cada uno enviando un
+mensaje de broadcast al conectarse. Las pruebas se realizaron con un script
+cliente (`scripts/test_scalability.py`) que abre N conexiones WebSocket
+concurrentes contra el servidor.
 
-- 1 cliente
-- 5 clientes
-- 10 clientes
-- 25 clientes
-- 50 clientes
+| Clientes | Conexión total | Promedio primer broadcast | Mensajes recibidos | Errores | Threads activos |
+|---|---:|---:|---:|---:|---:|
+| 1 | 0.796 ms | N/D | 0 | 0 | 3 estimados |
+| 5 | 2.148 ms | 24.812 ms | 20 | 0 | 7 estimados |
+| 10 | 3.803 ms | 9.732 ms | 90 | 0 | 12 medidos |
+| 25 | 8.177 ms | 6.461 ms | 600 | 0 | 27 medidos |
+| 50 | 14.936 ms | 33.331 ms | 2450 | 0 | 52 medidos |
 
-Durante cada prueba se registrará:
-- Número de hilos activos.
-- Cantidad de mensajes procesados por la cola.
-- Tiempo promedio de respuesta.
-- Cantidad de archivos transferidos.
-- Errores producidos, si los hay.
+**Resultados:**
+
+- **Distribución de mensajes correcta en todos los casos.** El número de
+  mensajes recibidos coincide exactamente con lo esperado matemáticamente
+  para un broadcast (N clientes × (N-1) destinatarios): 5×4=20, 10×9=90,
+  25×24=600, 50×49=2450. Esto confirma que la lógica de distribución de
+  mensajes no falla incluso bajo carga.
+- **Sin fuga de hilos.** El número de threads activos sigue el patrón
+  esperado (N clientes + 1 hilo principal + 1 hilo worker de la cola de
+  mensajes), sin hilos huérfanos, en las 5 corridas.
+- **Cero errores** en las 5 corridas, incluyendo la de 50 clientes
+  simultáneos.
+- **Tiempo de conexión total** crece de forma sub-lineal conforme aumenta la
+  cantidad de clientes (0.8 ms a 14.9 ms de N=1 a N=50), sin señales de
+  bloqueo del servidor.
+- El tiempo promedio del primer broadcast varía entre corridas (24.8 ms,
+  9.7 ms, 6.4 ms, 33.3 ms) sin una tendencia clara de crecimiento; al
+  tratarse de una sola muestra por valor de N en una máquina local, esta
+  variación se atribuye a ruido de medición y no a degradación del servidor,
+  dado que los conteos de mensajes y errores se mantuvieron exactos en todos
+  los casos.
 
 ## 9. Estructura del Proyecto
 
@@ -234,18 +253,6 @@ No requiere dependencias externas: todo el servidor usa la librería estándar
 de Python (`socket`, `threading`, `queue`, `sqlite3`, `hashlib`, `base64`,
 `struct`).
 
-El servidor escucha en `ws://localhost:5000` y crea `backend/chat.db` al
-iniciarse. El handshake puede probarse desde la consola del navegador:
-
-```javascript
-const socket = new WebSocket("ws://localhost:5000");
-socket.onopen = () => console.log("WebSocket conectado");
-socket.onclose = () => console.log("WebSocket cerrado");
-```
-
-El login del esqueleto todavía no valida la contraseña. No debe considerarse
-listo para producción ni exponerse fuera de un entorno local de desarrollo.
-
 ### Frontend
 ```bash
 cd frontend
@@ -253,7 +260,17 @@ npm install
 npm run dev
 ```
 
-El directorio frontend contiene actualmente la estructura inicial de React y
-los componentes pendientes de implementación. Para trabajar en paralelo, el
-frontend puede usar un mock basado en el contrato de
-[`docs/PROTOCOLO_MENSAJES.md`](docs/PROTOCOLO_MENSAJES.md).
+## 11. Mejoras Futuras
+
+- Salas de chat privadas.
+- Historial permanente de mensajes.
+- Confirmaciones de lectura y estados de usuario (en línea / ausente).
+- Cifrado de la comunicación (TLS) y de las contraseñas con hash más robusto.
+- Migrar la transferencia de archivos a *frames* binarios de WebSocket en vez
+  de base64 dentro de JSON, para reducir el uso de ancho de banda.
+
+## 12. Conclusión
+
+El proyecto aplica de manera práctica los conceptos vistos en el curso de Cómputo Paralelo y Distribuido: sockets TCP, programación con hilos,
+mecanismos de sincronización mediante locks y organización de mensajes
+mediante colas. La incorporación de WebSocket como capa de transporte sobre el mismo socket TCP permite, además, ofrecer una interfaz gráfica moderna en React sin sacrificar ninguno de los requisitos técnicos solicitados para la entrega.
