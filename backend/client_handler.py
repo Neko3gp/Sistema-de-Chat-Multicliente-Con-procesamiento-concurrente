@@ -234,33 +234,47 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 group_name = message.get("groupName") or ""
                 text = message.get("message")
                 if (
-                    not isinstance(members, list)
-                    or not isinstance(group_id, str)
+                    not isinstance(group_id, str)
                     or not group_id.strip()
                     or not isinstance(text, str)
                     or not text.strip()
                 ):
                     _reply(connection, {"type": "error", "reason": "invalid_message"})
                     continue
-                cleaned = []
-                for name in members:
-                    if isinstance(name, str) and name.strip() and name != username:
-                        cleaned.append(name.strip())
-                # Incluye al emisor para que todos los miembros compartan la lista.
-                unique_members = list(dict.fromkeys([username, *cleaned]))
-                if len(unique_members) < 2:
-                    _reply(connection, {"type": "error", "reason": "invalid_message"})
-                    continue
+                gid = group_id.strip()
+                stored = database.get_group(gid)
+                if stored is not None:
+                    db_members = [
+                        name for name in (stored.get("members") or [])
+                        if isinstance(name, str) and name.strip()
+                    ]
+                    if username not in db_members:
+                        _reply(connection, {"type": "error", "reason": "forbidden"})
+                        continue
+                    unique_members = list(dict.fromkeys(db_members))
+                    if not group_name:
+                        group_name = stored.get("name") or ""
+                else:
+                    if not isinstance(members, list):
+                        _reply(connection, {"type": "error", "reason": "invalid_message"})
+                        continue
+                    cleaned = []
+                    for name in members:
+                        if isinstance(name, str) and name.strip() and name.strip() != username:
+                            cleaned.append(name.strip())
+                    unique_members = list(dict.fromkeys([username, *cleaned]))
+                    if len(unique_members) < 2:
+                        _reply(connection, {"type": "error", "reason": "invalid_message"})
+                        continue
+                    database.save_group(gid, group_name or "Grupo", username, unique_members)
                 payload = {
                     "type": "group_message",
                     "from": username,
-                    "groupId": group_id.strip(),
+                    "groupId": gid,
                     "groupName": group_name if isinstance(group_name, str) else "",
                     "members": unique_members,
                     "message": text.strip(),
                 }
-                if database.get_group(group_id.strip()) is None:
-                    database.save_group(group_id.strip(), group_name or "Grupo", username, unique_members)
                 connection_manager.monitor_hub.record_message(len(raw.encode("utf-8")))
                 message_queue.put({"message": payload, "connection_manager": connection_manager})
                 continue
@@ -354,30 +368,45 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     continue
                 group_id = message.get("groupId")
                 if group_id:
-                    members = message.get("members")
+                    if not isinstance(group_id, str) or not group_id.strip():
+                        _reply(connection, {"type": "error", "reason": "invalid_message"})
+                        continue
+                    gid = group_id.strip()
                     group_name = message.get("groupName") or ""
                     filename = message.get("filename")
-                    if (
-                        not isinstance(members, list)
-                        or not isinstance(group_id, str)
-                        or not group_id.strip()
-                        or not isinstance(filename, str)
-                        or not filename.strip()
-                    ):
+                    if not isinstance(filename, str) or not filename.strip():
                         _reply(connection, {"type": "error", "reason": "invalid_message"})
                         continue
-                    cleaned = []
-                    for name in members:
-                        if isinstance(name, str) and name.strip() and name != username:
-                            cleaned.append(name.strip())
-                    unique_members = list(dict.fromkeys([username, *cleaned]))
-                    if len(unique_members) < 2:
-                        _reply(connection, {"type": "error", "reason": "invalid_message"})
-                        continue
+                    stored = database.get_group(gid)
+                    if stored is not None:
+                        db_members = [
+                            name for name in (stored.get("members") or [])
+                            if isinstance(name, str) and name.strip()
+                        ]
+                        if username not in db_members:
+                            _reply(connection, {"type": "error", "reason": "forbidden"})
+                            continue
+                        unique_members = list(dict.fromkeys(db_members))
+                        if not group_name:
+                            group_name = stored.get("name") or ""
+                    else:
+                        members = message.get("members")
+                        if not isinstance(members, list):
+                            _reply(connection, {"type": "error", "reason": "invalid_message"})
+                            continue
+                        cleaned = []
+                        for name in members:
+                            if isinstance(name, str) and name.strip() and name.strip() != username:
+                                cleaned.append(name.strip())
+                        unique_members = list(dict.fromkeys([username, *cleaned]))
+                        if len(unique_members) < 2:
+                            _reply(connection, {"type": "error", "reason": "invalid_message"})
+                            continue
+                        database.save_group(gid, group_name or "Grupo", username, unique_members)
                     payload = {
                         "type": "file",
                         "from": username,
-                        "groupId": group_id.strip(),
+                        "groupId": gid,
                         "groupName": group_name if isinstance(group_name, str) else "",
                         "members": unique_members,
                         "filename": filename.strip(),
@@ -386,10 +415,6 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     mime = message.get("mimeType")
                     if isinstance(mime, str) and mime.strip():
                         payload["mimeType"] = mime.strip()
-                    if database.get_group(group_id.strip()) is None:
-                        database.save_group(
-                            group_id.strip(), group_name or "Grupo", username, unique_members,
-                        )
                     message_queue.put(
                         {"message": payload, "connection_manager": connection_manager}
                     )

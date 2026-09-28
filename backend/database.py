@@ -517,6 +517,7 @@ def save_chat_message(message):
 
 def get_chat_history(username, limit=HISTORY_LIMIT):
     """Devuelve mensajes visibles para un usuario, incluidos los enviados offline."""
+    groups_by_id = {group["id"]: group for group in list_groups()}
     with closing(sqlite3.connect(DB_PATH)) as conn:
         rows = conn.execute(
             """
@@ -536,15 +537,18 @@ def get_chat_history(username, limit=HISTORY_LIMIT):
             message = json.loads(payload)
         except json.JSONDecodeError:
             continue
-        if message_type in {"group_message", "group_notice"}:
-            members = message.get("members")
-            if not isinstance(members, list) or username not in members:
-                # Avisos de expulsión: el saliente ya no está en members; no se rehidrata aquí.
-                continue
-        elif message_type == "file" and group_id is not None:
-            members = message.get("members")
-            if not isinstance(members, list) or username not in members:
-                continue
+        if message_type in {"group_message", "group_notice"} or (
+            message_type == "file" and group_id is not None
+        ):
+            group = groups_by_id.get(group_id) if group_id else None
+            if group is not None:
+                if username not in (group.get("members") or []):
+                    # Expulsado o nunca miembro: no rehidratar.
+                    continue
+            else:
+                members = message.get("members")
+                if not isinstance(members, list) or username not in members:
+                    continue
         elif message_type == "file" and group_id is None:
             if recipient not in (None, username) and sender != username:
                 continue

@@ -1527,18 +1527,20 @@ export default function App() {
     const id = createMessageId();
     const open = isSocketOpen();
     const activeGroup = selectedGroupId
-      ? customGroups.find((group) => group.id === selectedGroupId)
+      ? customGroupsRef.current.find((group) => group.id === selectedGroupId) ||
+        customGroups.find((group) => group.id === selectedGroupId)
       : null;
 
     let payload;
     if (activeGroup) {
+      const members = activeGroup.members || [];
       payload = {
         id,
         type: "group_message",
         from: username,
         groupId: activeGroup.id,
         groupName: activeGroup.name,
-        members: activeGroup.members || [],
+        members,
         message: text,
         at: new Date(),
         status: outgoingSharedStatus(open),
@@ -1547,7 +1549,7 @@ export default function App() {
         sendGroupMessage({
           groupId: activeGroup.id,
           groupName: activeGroup.name,
-          members: activeGroup.members || [],
+          members,
           message: text,
         });
       }
@@ -1582,18 +1584,20 @@ export default function App() {
     const id = createMessageId();
     const open = isSocketOpen();
     const activeGroup = selectedGroupId
-      ? customGroups.find((group) => group.id === selectedGroupId)
+      ? customGroupsRef.current.find((group) => group.id === selectedGroupId) ||
+        customGroups.find((group) => group.id === selectedGroupId)
       : null;
 
     let payload;
     if (activeGroup) {
+      const members = activeGroup.members || [];
       payload = {
         id,
         type: "file",
         from: username,
         groupId: activeGroup.id,
         groupName: activeGroup.name,
-        members: activeGroup.members || [],
+        members,
         filename: file.name,
         mimeType: file.type || undefined,
         data,
@@ -1604,7 +1608,7 @@ export default function App() {
         sendFile(null, file.name, data, file.type || "", {
           groupId: activeGroup.id,
           groupName: activeGroup.name,
-          members: activeGroup.members || [],
+          members,
         });
       }
     } else {
