@@ -5,11 +5,11 @@ export default function MessageStatus({ status, mine }) {
 
   const label = statusLabel(status);
   let ticks = "✓";
-  let className = "ticks pending";
+  let className = "ticks sent";
 
-  if (status === "sent") {
+  if (status === "delivered") {
     ticks = "✓✓";
-    className = "ticks sent";
+    className = "ticks delivered";
   } else if (status === "seen") {
     ticks = "✓✓";
     className = "ticks seen";
@@ -19,6 +19,9 @@ export default function MessageStatus({ status, mine }) {
   } else if (status === "pending") {
     ticks = "○";
     className = "ticks pending";
+  } else if (status === "sent") {
+    ticks = "✓";
+    className = "ticks sent";
   }
 
   return (

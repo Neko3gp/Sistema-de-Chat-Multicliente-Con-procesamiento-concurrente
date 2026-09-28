@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { FiPlus, FiX } from "react-icons/fi";
+import { FiPlus, FiSearch, FiUserMinus, FiX } from "react-icons/fi";
 import { getInitials, getNameColor } from "../utils/avatar";
 
 const FIELD_LABELS = {
@@ -14,11 +14,20 @@ export default function GroupInfo({
   currentUser,
   onlineUsers = [],
   contacts = {},
+  directoryUsers = [],
+  directoryLoading = false,
+  onRequestDirectory,
   onBack,
   onOpenMember,
   onSave,
 }) {
-  const isAdmin = currentUser && group?.admin === currentUser;
+  const adminName = group?.admin || group?.owner || "";
+  const isAdmin =
+    Boolean(currentUser) &&
+    Boolean(adminName) &&
+    group?.id !== "general" &&
+    adminName.toLowerCase() === currentUser.toLowerCase();
+  const canManageMembers = isAdmin;
   const [members, setMembers] = useState(group?.members || []);
 
   const [name, setName] = useState(group?.name || "Grupo");
@@ -30,11 +39,34 @@ export default function GroupInfo({
   const [draft, setDraft] = useState("");
   const [savedField, setSavedField] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [addValue, setAddValue] = useState("");
+  const [addQuery, setAddQuery] = useState("");
   const [addError, setAddError] = useState("");
   const [addSaved, setAddSaved] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [removeSaved, setRemoveSaved] = useState(false);
 
   const color = getNameColor(name);
+
+  const addCandidates = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    const memberSet = new Set(
+      (members || []).map((member) => member.toLowerCase()),
+    );
+    const list = Array.isArray(directoryUsers) ? directoryUsers : [];
+    return list.filter((user) => {
+      const username = user?.username || "";
+      if (!username || memberSet.has(username.toLowerCase())) return false;
+      if (username.toLowerCase() === currentUser?.toLowerCase()) return false;
+      if (!q) return true;
+      const desc = (user.description || "").toLowerCase();
+      const email = (user.email || "").toLowerCase();
+      return (
+        username.toLowerCase().includes(q) ||
+        desc.includes(q) ||
+        email.includes(q)
+      );
+    });
+  }, [addQuery, directoryUsers, members, currentUser]);
 
   useEffect(() => {
     setMembers(group?.members || []);
@@ -42,34 +74,6 @@ export default function GroupInfo({
     setDescription(group?.description || "");
     setAvatarUrl(group?.avatarUrl || "");
   }, [group]);
-
-  function resolveParticipant(query) {
-    const q = query.trim().toLowerCase();
-    if (!q) return null;
-
-    for (const [username, profile] of Object.entries(contacts)) {
-      if (
-        username.toLowerCase() === q ||
-        profile.email?.toLowerCase() === q
-      ) {
-        return username;
-      }
-    }
-
-    const onlineMatch = onlineUsers.find(
-      (user) => user.toLowerCase() === q,
-    );
-    if (onlineMatch) return onlineMatch;
-
-    const memberMatch = members.find((user) => user.toLowerCase() === q);
-    if (memberMatch) return memberMatch;
-
-    if (q.includes("@")) {
-      return q.split("@")[0].replace(/[^\w.-]/g, "") || null;
-    }
-
-    return query.trim();
-  }
 
   function askEdit(field) {
     if (!isAdmin) return;
@@ -104,6 +108,7 @@ export default function GroupInfo({
       name,
       description,
       avatarUrl,
+      admin: adminName || currentUser,
       members,
     };
 
@@ -129,7 +134,14 @@ export default function GroupInfo({
 
   function clearPhoto() {
     if (!isAdmin) return;
-    const next = { ...group, name, description, avatarUrl: "", members };
+    const next = {
+      ...group,
+      name,
+      description,
+      avatarUrl: "",
+      admin: adminName || currentUser,
+      members,
+    };
     setAvatarUrl("");
     setDraft("");
     setEditingField(null);
@@ -138,19 +150,16 @@ export default function GroupInfo({
     setTimeout(() => setSavedField(""), 1600);
   }
 
-  function handleAddParticipant(event) {
-    event.preventDefault();
-    const query = addValue.trim();
-    if (!query) {
-      setAddError("Escribe un nombre de usuario o correo");
-      return;
-    }
+  function openAddParticipant() {
+    if (!canManageMembers) return;
+    setAddOpen(true);
+    setAddError("");
+    setAddQuery("");
+    onRequestDirectory?.();
+  }
 
-    const participant = resolveParticipant(query);
-    if (!participant) {
-      setAddError("No se pudo identificar al usuario");
-      return;
-    }
+  function handleAddParticipant(participant) {
+    if (!canManageMembers || !participant) return;
 
     if (participant.toLowerCase() === currentUser?.toLowerCase()) {
       setAddError("Ya formas parte del grupo");
@@ -169,14 +178,39 @@ export default function GroupInfo({
       name,
       description,
       avatarUrl,
+      admin: adminName || currentUser,
       members: nextMembers,
     });
 
-    setAddValue("");
+    setAddQuery("");
     setAddError("");
     setAddOpen(false);
     setAddSaved(true);
     setTimeout(() => setAddSaved(false), 1600);
+  }
+
+  function confirmRemoveMember() {
+    if (!canManageMembers || !removeTarget) return;
+    if (removeTarget.toLowerCase() === adminName.toLowerCase()) {
+      setRemoveTarget(null);
+      return;
+    }
+
+    const nextMembers = members.filter(
+      (member) => member.toLowerCase() !== removeTarget.toLowerCase(),
+    );
+    setMembers(nextMembers);
+    onSave?.({
+      ...group,
+      name,
+      description,
+      avatarUrl,
+      admin: adminName || currentUser,
+      members: nextMembers,
+    });
+    setRemoveTarget(null);
+    setRemoveSaved(true);
+    setTimeout(() => setRemoveSaved(false), 1600);
   }
 
   return (
@@ -262,7 +296,7 @@ export default function GroupInfo({
 
         <div className="profile-info-row">
           <span>Administrador</span>
-          <strong>{group?.admin || "—"}</strong>
+          <strong>{adminName || "—"}</strong>
         </div>
         <div className="profile-info-row">
           <span>Integrantes</span>
@@ -272,24 +306,24 @@ export default function GroupInfo({
         </div>
       </section>
 
-      {savedField || addSaved ? (
+      {savedField || addSaved || removeSaved ? (
         <p className="profile-saved field-saved">
-          {addSaved ? "Participante agregado" : "Campo actualizado"}
+          {removeSaved
+            ? "Participante expulsado"
+            : addSaved
+              ? "Participante agregado"
+              : "Campo actualizado"}
         </p>
       ) : null}
 
       <section className="group-members">
         <div className="group-members-header">
           <h3>Integrantes ({members.length})</h3>
-          {isAdmin ? (
+          {canManageMembers ? (
             <button
               type="button"
               className="add-member-btn"
-              onClick={() => {
-                setAddOpen(true);
-                setAddError("");
-                setAddValue("");
-              }}
+              onClick={openAddParticipant}
             >
               <FiPlus size={16} aria-hidden="true" />
               Agregar
@@ -300,33 +334,48 @@ export default function GroupInfo({
         <ul>
           {members.map((member) => {
             const online = onlineUsers.includes(member);
-            const memberIsAdmin = member === group?.admin;
+            const memberIsAdmin =
+              Boolean(adminName) &&
+              member.toLowerCase() === adminName.toLowerCase();
 
             return (
               <li key={member}>
-                <button
-                  type="button"
-                  className="group-member-row"
-                  onClick={() => onOpenMember?.(member)}
-                >
-                  <span
-                    className="avatar"
-                    style={{ background: getNameColor(member) }}
-                    aria-hidden="true"
+                <div className="group-member-row-wrap">
+                  <button
+                    type="button"
+                    className="group-member-row"
+                    onClick={() => onOpenMember?.(member)}
                   >
-                    {getInitials(member)}
-                  </span>
-                  <span className="group-member-text">
-                    <strong>
-                      {member}
-                      {memberIsAdmin ? " · Admin" : ""}
-                    </strong>
-                    <small className={online ? "online" : ""}>
-                      {online ? "en línea" : "desconectado"}
-                    </small>
-                  </span>
-                  <span className="settings-row-chevron">›</span>
-                </button>
+                    <span
+                      className="avatar"
+                      style={{ background: getNameColor(member) }}
+                      aria-hidden="true"
+                    >
+                      {getInitials(member)}
+                    </span>
+                    <span className="group-member-text">
+                      <strong>
+                        {member}
+                        {memberIsAdmin ? " · Admin" : ""}
+                      </strong>
+                      <small className={online ? "online" : ""}>
+                        {online ? "en línea" : "desconectado"}
+                      </small>
+                    </span>
+                    <span className="settings-row-chevron">›</span>
+                  </button>
+                  {canManageMembers && !memberIsAdmin ? (
+                    <button
+                      type="button"
+                      className="kick-member-btn"
+                      title={`Expulsar a ${member}`}
+                      aria-label={`Expulsar a ${member}`}
+                      onClick={() => setRemoveTarget(member)}
+                    >
+                      <FiUserMinus size={16} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
               </li>
             );
           })}
@@ -341,7 +390,7 @@ export default function GroupInfo({
               onClick={() => setAddOpen(false)}
             >
               <div
-                className="confirm-dialog"
+                className="confirm-dialog compose-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-label="Agregar participante"
@@ -359,33 +408,119 @@ export default function GroupInfo({
                   </button>
                 </div>
 
-                <p>Escribe el nombre de usuario o el correo de la persona.</p>
+                <p>Elige un usuario del catálogo para añadirlo al grupo.</p>
 
-                <form onSubmit={handleAddParticipant} className="new-chat-form">
+                <div className="compose-search">
+                  <FiSearch size={16} aria-hidden="true" />
                   <input
-                    type="text"
+                    type="search"
                     autoFocus
-                    value={addValue}
+                    value={addQuery}
                     onChange={(event) => {
-                      setAddValue(event.target.value);
+                      setAddQuery(event.target.value);
                       setAddError("");
                     }}
-                    placeholder="usuario o correo@ejemplo.com"
+                    placeholder="Buscar usuario…"
                   />
+                </div>
 
-                  {addError ? <p className="input-error">{addError}</p> : null}
+                <ul className="compose-user-list">
+                  {directoryLoading ? (
+                    <li className="compose-empty">Cargando usuarios…</li>
+                  ) : addCandidates.length === 0 ? (
+                    <li className="compose-empty">No hay usuarios disponibles</li>
+                  ) : (
+                    addCandidates.map((user) => {
+                      const username = user.username;
+                      const online = onlineUsers.includes(username);
+                      return (
+                        <li key={username}>
+                          <button
+                            type="button"
+                            className="compose-user-item"
+                            onClick={() => handleAddParticipant(username)}
+                          >
+                            {user.avatarUrl ? (
+                              <img
+                                className="compose-user-avatar"
+                                src={user.avatarUrl}
+                                alt=""
+                              />
+                            ) : (
+                              <span
+                                className="compose-user-avatar initials"
+                                style={{ background: getNameColor(username) }}
+                              >
+                                {getInitials(username)}
+                              </span>
+                            )}
+                            <span className="compose-user-text">
+                              <strong>{username}</strong>
+                              <small>
+                                {online
+                                  ? "en línea"
+                                  : user.description || "sin descripción"}
+                              </small>
+                            </span>
+                            {online ? <span className="compose-online-dot" /> : null}
+                          </button>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
 
-                  <div className="confirm-dialog-actions">
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => setAddOpen(false)}
-                    >
-                      Cancelar
-                    </button>
-                    <button type="submit">Agregar</button>
-                  </div>
-                </form>
+                {addError ? <p className="input-error">{addError}</p> : null}
+
+                <div className="confirm-dialog-actions">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setAddOpen(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {removeTarget
+        ? createPortal(
+            <div
+              className="confirm-dialog-backdrop confirm-dialog-backdrop--card"
+              role="presentation"
+              onClick={() => setRemoveTarget(null)}
+            >
+              <div
+                className="confirm-dialog confirm-dialog--card"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Confirmar expulsión"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>¿Expulsar del grupo?</h3>
+                <p>
+                  Vas a sacar a <strong>{removeTarget}</strong> de este grupo.
+                </p>
+                <div className="confirm-dialog-actions">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setRemoveTarget(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={confirmRemoveMember}
+                  >
+                    Expulsar
+                  </button>
+                </div>
               </div>
             </div>,
             document.body,

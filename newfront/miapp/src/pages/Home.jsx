@@ -1,15 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Message from "../components/Message";
 import FileMessage from "../components/FileMessage";
 import MessageInput from "../components/MessageInput";
+import TypingBubble from "../components/TypingBubble";
+import SystemNotice from "../components/SystemNotice";
 import { getInitials, getNameColor } from "../utils/avatar";
+import { chatKey } from "../utils/messageStatus";
 
 function filterMessages(messages, username, selectedUser, selectedGroupId) {
   return messages.filter((message) => {
     if (selectedGroupId) {
       return (
-        message.type === "group_message" && message.groupId === selectedGroupId
+        (message.type === "group_message" || message.type === "group_notice") &&
+        message.groupId === selectedGroupId
       );
     }
 
@@ -57,12 +61,15 @@ export default function Home({
   contacts = {},
   unreadCounts = {},
   notifications = [],
+  typingByChat = {},
   directoryUsers = [],
   directoryLoading = false,
   openChatNonce = 0,
+  onTyping,
   onLogout,
 }) {
   const [chatOpen, setChatOpen] = useState(false);
+  const messagesEndRef = useRef(null);
 
   const activeGroup = selectedGroupId
     ? customGroups.find((group) => group.id === selectedGroupId)
@@ -139,7 +146,15 @@ export default function Home({
     onLeaveChatView?.();
   }
 
+  const typingNames = typingByChat[chatKey(selectedUser, selectedGroupId)]?.names || [];
+  const showAuthorOnTyping = Boolean(activeGroup) || selectedUser === null;
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [visibleMessages.length, typingNames.join("|")]);
+
   function handleOpenHeaderProfile() {
+
     if (activeGroup) {
       onOpenGroupInfo?.(activeGroup.id);
       return;
@@ -232,33 +247,51 @@ export default function Home({
         </header>
 
         <section className="messages">
-          {visibleMessages.length === 0 ? (
+          {visibleMessages.length === 0 && typingNames.length === 0 ? (
             <p className="empty">Aún no hay mensajes. Escribe el primero.</p>
           ) : (
-            visibleMessages.map((message, index) =>
-              message.type === "file" ? (
-                <FileMessage
-                  key={message.id || `file-${index}`}
-                  message={message}
-                  currentUser={username}
-                  avatarUrl={contacts[message.from]?.avatarUrl || ""}
+            <>
+              {visibleMessages.map((message, index) =>
+                message.type === "group_notice" ? (
+                  <SystemNotice
+                    key={message.id || `notice-${index}`}
+                    message={message}
+                  />
+                ) : message.type === "file" ? (
+                  <FileMessage
+                    key={message.id || `file-${index}`}
+                    message={message}
+                    currentUser={username}
+                    avatarUrl={contacts[message.from]?.avatarUrl || ""}
+                  />
+                ) : (
+                  <Message
+                    key={message.id || `msg-${index}`}
+                    message={message}
+                    currentUser={username}
+                    avatarUrl={contacts[message.from]?.avatarUrl || ""}
+                  />
+                ),
+              )}
+              {typingNames.map((name) => (
+                <TypingBubble
+                  key={`typing-${name}`}
+                  from={name}
+                  avatarUrl={contacts[name]?.avatarUrl || ""}
+                  showAuthor={showAuthorOnTyping}
                 />
-              ) : (
-                <Message
-                  key={message.id || `msg-${index}`}
-                  message={message}
-                  currentUser={username}
-                  avatarUrl={contacts[message.from]?.avatarUrl || ""}
-                />
-              ),
-            )
+              ))}
+              <div ref={messagesEndRef} />
+            </>
           )}
         </section>
 
         <MessageInput
-          selectedUser={selectedUser || selectedGroupId}
+          selectedUser={selectedUser}
+          selectedGroupId={selectedGroupId}
           onSend={onSend}
           onSendFile={onSendFile}
+          onTyping={onTyping}
         />
       </main>
     </div>

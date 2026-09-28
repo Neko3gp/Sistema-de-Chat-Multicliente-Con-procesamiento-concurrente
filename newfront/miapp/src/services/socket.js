@@ -91,18 +91,20 @@ export function sendPrivateMessage(to, text) {
   socket?.send(JSON.stringify({ type: "private_message", to, message: text }));
 }
 
-export function sendFile(to, filename, data) {
+export function sendFile(to, filename, data, mimeType = "") {
   const payload = { type: "file", filename, data };
   if (to) payload.to = to;
+  if (mimeType) payload.mimeType = mimeType;
   socket?.send(JSON.stringify(payload));
 }
 
-export function sendUpdateProfile({ avatarUrl = "", description = "" } = {}) {
+export function sendUpdateProfile({ avatarUrl = "", description = "", email = "" } = {}) {
   socket?.send(
     JSON.stringify({
       type: "update_profile",
       avatarUrl,
       description,
+      email,
     }),
   );
 }
@@ -111,6 +113,24 @@ export function sendReadReceipt(chat) {
   const payload = { type: "read_receipt" };
   if (chat) payload.chat = chat;
   else payload.chat = null;
+  socket?.send(JSON.stringify(payload));
+}
+
+export function sendTyping({
+  isTyping,
+  chat = null,
+  groupId = null,
+  members = [],
+} = {}) {
+  const payload = { type: "typing", isTyping: Boolean(isTyping) };
+  if (groupId) {
+    payload.groupId = groupId;
+    payload.members = members;
+  } else if (chat) {
+    payload.chat = chat;
+  } else {
+    payload.chat = null;
+  }
   socket?.send(JSON.stringify(payload));
 }
 
@@ -126,6 +146,28 @@ export function sendGroupMessage({ groupId, groupName = "", members = [], messag
       groupName,
       members,
       message,
+    }),
+  );
+}
+
+export function sendCreateGroup({ groupId, name, members = [] } = {}) {
+  socket?.send(
+    JSON.stringify({
+      type: "create_group",
+      groupId,
+      name,
+      members,
+    }),
+  );
+}
+
+export function sendUpdateGroup({ groupId, name, members = [] } = {}) {
+  socket?.send(
+    JSON.stringify({
+      type: "update_group",
+      groupId,
+      name,
+      members,
     }),
   );
 }

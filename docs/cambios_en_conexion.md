@@ -144,9 +144,11 @@ Archivos back:
 - `docs/PROTOCOLO_MENSAJES.md`
 
 ### Frontend — estados (ticks)
-- `○` / `!` → no enviado (sin socket / fallo)
-- `✓✓` gris → enviado al servidor
-- `✓✓` azul → visto (`read_receipt` del otro)
+- `✓` (una) → mensaje enviado; el destinatario **no** está conectado (queda en historial)
+- `✓✓` gris → destinatario **conectado**, le llegó, aún **no** lo abrió
+- `✓✓` azul → conectado, le llegó y **abrió el chat** (`read_receipt`)
+- `!` → no salió por el socket
+- Si el destinatario se conecta después, los `✓` de ese chat pasan a `✓✓` gris
 - Al abrir el chat se marca leído y se manda `read_receipt`
 
 ### Frontend — bandeja y badges

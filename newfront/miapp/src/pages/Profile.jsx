@@ -233,7 +233,7 @@ export default function Profile({
 
             <label>
               <span>Correo</span>
-              <small>Se guarda en este dispositivo</small>
+              <small>Visible en tu perfil</small>
               <input
                 type="email"
                 value={email}

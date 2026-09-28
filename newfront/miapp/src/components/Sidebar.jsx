@@ -6,6 +6,7 @@ import ComposeMenu from "./ComposeMenu";
 import NewGroupDialog from "./NewGroupDialog";
 import NewMessageDialog from "./NewMessageDialog";
 import NotificationTray from "./NotificationTray";
+import ProfilePhoto from "./ProfilePhoto";
 
 const FILTERS = ["Todos", "Conectados", "Sin conexión"];
 
@@ -28,17 +29,7 @@ function getPreview(message) {
 function AvatarWithStatus({ name, avatarUrl, online, sizeClass = "avatar" }) {
   return (
     <span className={`avatar-wrap ${online ? "is-online" : ""}`}>
-      {avatarUrl ? (
-        <img className={`${sizeClass} photo`} src={avatarUrl} alt="" />
-      ) : (
-        <span
-          className={sizeClass}
-          style={{ background: getNameColor(name) }}
-          aria-hidden="true"
-        >
-          {getInitials(name)}
-        </span>
-      )}
+      <ProfilePhoto name={name} avatarUrl={avatarUrl} className={sizeClass} />
       {online ? (
         <span className="online-dot" title="En línea" aria-label="En línea" />
       ) : null}
@@ -121,7 +112,10 @@ export default function Sidebar({
         );
       }
       if (entry.isGroup) {
-        return message.type === "group_message" && message.groupId === entry.id;
+        return (
+          (message.type === "group_message" || message.type === "group_notice") &&
+          message.groupId === entry.id
+        );
       }
       return (
         (message.type === "private_message" || message.type === "file") &&
@@ -133,11 +127,13 @@ export default function Sidebar({
       ? chatKey(null, entry.id)
       : chatKey(entry.isBroadcast ? null : entry.id);
     const unread = unreadCounts[key] || 0;
+    const lastAtMs = last?.at ? new Date(last.at).getTime() : 0;
 
     return {
       ...entry,
       lastMessage: getPreview(last),
       time: last ? formatTime(last.at ? new Date(last.at) : new Date()) : "",
+      lastAtMs: Number.isNaN(lastAtMs) ? 0 : lastAtMs,
       unread,
       online: entry.isBroadcast || entry.isGroup ? false : users.includes(entry.id),
     };
@@ -148,19 +144,27 @@ export default function Sidebar({
     0,
   );
 
-  const visibleChats = chats.filter((chat) => {
-    const matchesQuery = chat.name
-      .toLowerCase()
-      .includes(query.trim().toLowerCase());
-    if (!matchesQuery) return false;
-    if (filter === "Conectados") return !chat.isBroadcast && !chat.isGroup && chat.online;
-    if (filter === "Sin conexión") return !chat.isBroadcast && !chat.isGroup && !chat.online;
-    return true;
-  });
+  const visibleChats = chats
+    .filter((chat) => {
+      const matchesQuery = chat.name
+        .toLowerCase()
+        .includes(query.trim().toLowerCase());
+      if (!matchesQuery) return false;
+      if (filter === "Conectados") return !chat.isBroadcast && !chat.isGroup && chat.online;
+      if (filter === "Sin conexión") return !chat.isBroadcast && !chat.isGroup && !chat.online;
+      return true;
+    })
+    .sort((a, b) => {
+      // Sala general fija arriba; el resto por mensaje más reciente.
+      if (a.isBroadcast && !b.isBroadcast) return -1;
+      if (!a.isBroadcast && b.isBroadcast) return 1;
+      return (b.lastAtMs || 0) - (a.lastAtMs || 0);
+    });
 
   function openCompose(step) {
     setComposeStep(step);
-    if (step === "message" || step === "group") {
+    // Precarga el directorio al abrir el menú, no solo al entrar al diálogo.
+    if (step === "menu" || step === "message" || step === "group") {
       onRequestDirectory?.();
     }
   }
@@ -199,16 +203,11 @@ export default function Sidebar({
             aria-label="Abrir perfil"
             onClick={onOpenProfile}
           >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="sidebar-mini-avatar" />
-            ) : (
-              <span
-                className="sidebar-mini-avatar initials"
-                style={{ background: getNameColor(username) }}
-              >
-                {getInitials(username)}
-              </span>
-            )}
+            <ProfilePhoto
+              name={username}
+              avatarUrl={avatarUrl}
+              className="sidebar-mini-avatar"
+            />
           </button>
           <button
             type="button"

@@ -11,7 +11,10 @@ export function chatKey(selectedUser, selectedGroupId = null) {
 }
 
 export function messageChatKey(message, me) {
-  if (message.type === "group_message" && message.groupId) {
+  if (
+    (message.type === "group_message" || message.type === "group_notice") &&
+    message.groupId
+  ) {
     return `__group__:${message.groupId}`;
   }
   if (
@@ -34,9 +37,11 @@ export function groupKeyFromChatKey(key) {
 export function statusLabel(status) {
   switch (status) {
     case "pending":
-      return "No enviado";
+      return "Enviando…";
     case "sent":
-      return "Enviado";
+      return "Enviado (destinatario desconectado)";
+    case "delivered":
+      return "Entregado";
     case "seen":
       return "Visto";
     case "failed":
@@ -44,6 +49,17 @@ export function statusLabel(status) {
     default:
       return "";
   }
+}
+
+/** Estado al mandar un privado según si el destinatario está en línea. */
+export function outgoingPrivateStatus(socketOpen, recipientOnline) {
+  if (!socketOpen) return "failed";
+  return recipientOnline ? "delivered" : "sent";
+}
+
+/** Sala general / grupo: si salió por el socket, se considera entregado. */
+export function outgoingSharedStatus(socketOpen) {
+  return socketOpen ? "delivered" : "failed";
 }
 
 export function truncateText(text, max = 72) {

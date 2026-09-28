@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FiFile, FiImage, FiMusic, FiPaperclip, FiX } from "react-icons/fi";
 import { getFileKind } from "../utils/files";
 
@@ -35,7 +35,13 @@ function shortenFileName(name, max = 28) {
   return `${base.slice(0, keep)}…${ext}`;
 }
 
-export default function MessageInput({ selectedUser, onSend, onSendFile }) {
+export default function MessageInput({
+  selectedUser,
+  selectedGroupId = null,
+  onSend,
+  onSendFile,
+  onTyping,
+}) {
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
   const [error, setError] = useState("");
@@ -43,10 +49,48 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedType, setSelectedType] = useState("image");
   const fileRef = useRef(null);
+  const typingActiveRef = useRef(false);
+  const typingTimerRef = useRef(null);
+
+  function setTyping(active) {
+    if (typingActiveRef.current === active) return;
+    typingActiveRef.current = active;
+    onTyping?.(active);
+  }
+
+  function stopTypingSoon() {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => setTyping(false), 1800);
+  }
+
+  function handleTextChange(event) {
+    const value = event.target.value;
+    setText(value);
+    if (value.trim()) {
+      setTyping(true);
+      stopTypingSoon();
+    } else {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      setTyping(false);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (typingActiveRef.current) {
+        typingActiveRef.current = false;
+        onTyping?.(false);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUser, selectedGroupId]);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    setTyping(false);
 
     if (pendingFile) {
       setSending(true);
@@ -60,7 +104,9 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
             ? "El archivo supera 5 MiB"
             : err?.message === "user_not_found"
               ? "Ese usuario no está conectado"
-              : "No se pudo enviar el archivo",
+              : err?.message?.includes("grupos")
+                ? err.message
+                : "No se pudo enviar el archivo",
         );
       } finally {
         setSending(false);
@@ -83,18 +129,14 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
       return;
     }
 
-    const kind = getFileKind(file.name, file.type);
-    if (kind !== selectedType) {
-      setError(
-        `Selecciona un archivo de tipo ${FILE_TYPES[selectedType].label.toLowerCase()}`,
-      );
+    if (file.size > 5 * 1024 * 1024) {
+      setError("El archivo supera 5 MiB");
       setPendingFile(null);
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
 
     setPendingFile(file);
-    setPickerOpen(false);
   }
 
   function clearFile() {
@@ -112,6 +154,11 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
 
   const kind = pendingFile ? getFileKind(pendingFile.name, pendingFile.type) : null;
   const accept = FILE_TYPES[selectedType].accept;
+  const placeholder = selectedGroupId
+    ? "Mensaje al grupo..."
+    : selectedUser
+      ? `Mensaje privado a ${selectedUser}...`
+      : "Mensaje para todos...";
 
   return (
     <form className="message-input" onSubmit={handleSubmit}>
@@ -150,11 +197,10 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
             className="attach-btn"
             title="Adjuntar archivo"
             aria-label="Adjuntar archivo"
-            aria-expanded={pickerOpen}
             onClick={() => setPickerOpen((open) => !open)}
             disabled={sending}
           >
-            <FiPaperclip size={18} aria-hidden="true" />
+            <FiPaperclip size={20} aria-hidden="true" />
           </button>
         </div>
 
@@ -175,17 +221,17 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
             <input
               type="text"
               value={text}
-              onChange={(event) => setText(event.target.value)}
-              placeholder={
-                selectedUser
-                  ? `Mensaje privado a ${selectedUser}...`
-                  : "Mensaje para todos..."
-              }
+              onChange={handleTextChange}
+              placeholder={placeholder}
               disabled={sending}
               onFocus={() => {
                 setPickerOpen(false);
                 window.scrollTo(0, 0);
                 requestAnimationFrame(() => window.scrollTo(0, 0));
+              }}
+              onBlur={() => {
+                if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+                setTyping(false);
               }}
             />
           )}

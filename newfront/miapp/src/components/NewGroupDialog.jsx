@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { FiSearch, FiX } from "react-icons/fi";
-import { getInitials, getNameColor } from "../utils/avatar";
+import ProfilePhoto from "./ProfilePhoto";
 
 export default function NewGroupDialog({
   onClose,
@@ -103,7 +103,7 @@ export default function NewGroupDialog({
         </div>
 
         <ul className="compose-user-list">
-          {loading ? (
+          {loading && filtered.length === 0 ? (
             <li className="compose-empty">Cargando usuarios…</li>
           ) : filtered.length === 0 ? (
             <li className="compose-empty">No hay usuarios que coincidan</li>
@@ -123,20 +123,11 @@ export default function NewGroupDialog({
                     }
                     onClick={() => toggleMember(username)}
                   >
-                    {user.avatarUrl ? (
-                      <img
-                        className="compose-user-avatar"
-                        src={user.avatarUrl}
-                        alt=""
-                      />
-                    ) : (
-                      <span
-                        className="compose-user-avatar initials"
-                        style={{ background: getNameColor(username) }}
-                      >
-                        {getInitials(username)}
-                      </span>
-                    )}
+                    <ProfilePhoto
+                      name={username}
+                      avatarUrl={user.avatarUrl}
+                      className="compose-user-avatar"
+                    />
                     <span className="compose-user-text">
                       <strong>{username}</strong>
                       <small>

@@ -14,8 +14,11 @@ import {
   sendPrivateMessage,
   sendFile,
   sendGroupMessage,
+  sendCreateGroup,
+  sendUpdateGroup,
   sendUpdateProfile,
   sendReadReceipt,
+  sendTyping,
   requestDirectory,
   isSocketOpen,
   requestAdminUsers,
@@ -37,6 +40,8 @@ import {
   createMessageId,
   groupKeyFromChatKey,
   messageChatKey,
+  outgoingPrivateStatus,
+  outgoingSharedStatus,
   truncateText,
 } from "./utils/messageStatus";
 import IncomingToast from "./components/IncomingToast";
@@ -128,6 +133,14 @@ function hydrateHistory(history, owner) {
       ...message,
       id: message.id || createMessageId(),
       at: message.at ? new Date(message.at) : new Date(),
+      status:
+        message.from === owner
+          ? message.status === "seen"
+            ? "seen"
+            : message.status === "sent"
+              ? "sent"
+              : "delivered"
+          : undefined,
     })),
     chatUsers: Array.from(chatUsers),
     contacts,
@@ -160,6 +173,8 @@ export default function App() {
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
+  const [lastReadAt, setLastReadAt] = useState({});
+  const [typingByChat, setTypingByChat] = useState({});
   const [incomingToast, setIncomingToast] = useState(null);
   const [openChatNonce, setOpenChatNonce] = useState(0);
   const [isViewingChat, setIsViewingChat] = useState(true);
@@ -184,6 +199,8 @@ export default function App() {
   const groupNameRef = useRef("Sala general");
   const contactsRef = useRef({});
   const customGroupsRef = useRef([]);
+  const lastReadAtRef = useRef({});
+  const typingTimersRef = useRef({});
 
   const generalGroup = groupsData.general;
   groupNameRef.current = generalGroup?.name || "Sala general";
@@ -192,6 +209,7 @@ export default function App() {
   isViewingChatRef.current = isViewingChat;
   contactsRef.current = contacts;
   customGroupsRef.current = customGroups;
+  lastReadAtRef.current = lastReadAt;
 
   const inApp =
     authenticated &&
@@ -253,8 +271,8 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !username) return;
-    saveUnreadStore(username, unreadCounts, notifications);
-  }, [authenticated, username, unreadCounts, notifications]);
+    saveUnreadStore(username, unreadCounts, notifications, lastReadAt);
+  }, [authenticated, username, unreadCounts, notifications, lastReadAt]);
 
   useEffect(() => {
     const session = loadSession();
@@ -278,6 +296,12 @@ export default function App() {
 
   function markChatRead(user = null, groupId = null) {
     const key = chatKey(user, groupId);
+    const readAt = new Date().toISOString();
+    setLastReadAt((prev) => {
+      const next = { ...prev, [key]: readAt };
+      lastReadAtRef.current = next;
+      return next;
+    });
     setUnreadCounts((prev) => {
       if (!prev[key]) return prev;
       const next = { ...prev };
@@ -292,6 +316,129 @@ export default function App() {
     if (!groupId && isSocketOpen()) {
       sendReadReceipt(user || null);
     }
+  }
+
+  function handleMarkAllNotificationsRead() {
+    const now = new Date().toISOString();
+    setLastReadAt((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(unreadCounts)) {
+        next[key] = now;
+      }
+      lastReadAtRef.current = next;
+      return next;
+    });
+    setUnreadCounts({});
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  }
+
+  function applyUnreadFromHistory(messages) {
+    const me = usernameRef.current;
+    const list = Array.isArray(messages) ? messages : [];
+    if (!me || list.length === 0) return;
+
+    const viewingKey =
+      isViewingChatRef.current
+        ? chatKey(selectedUserRef.current, selectedGroupIdRef.current)
+        : null;
+    const lastRead = lastReadAtRef.current || {};
+
+    const byChat = {};
+    for (const message of list) {
+      if (!message?.from || message.from === me) continue;
+      const key = messageChatKey(message, me);
+      if (!byChat[key]) byChat[key] = [];
+      byChat[key].push(message);
+    }
+
+    const nextCounts = {};
+    const notifItems = [];
+    let newestToast = null;
+
+    for (const [key, chatMessages] of Object.entries(byChat)) {
+      if (key === viewingKey) continue;
+
+      const sorted = [...chatMessages].sort(
+        (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+      );
+
+      let thresholdMs = null;
+      if (lastRead[key]) {
+        const parsed = new Date(lastRead[key]).getTime();
+        if (!Number.isNaN(parsed)) thresholdMs = parsed;
+      }
+      if (thresholdMs == null) {
+        const ownTimes = list
+          .filter(
+            (message) =>
+              message.from === me && messageChatKey(message, me) === key,
+          )
+          .map((message) => new Date(message.at).getTime())
+          .filter((value) => !Number.isNaN(value));
+        if (ownTimes.length) thresholdMs = Math.max(...ownTimes);
+      }
+
+      const unreadMessages =
+        thresholdMs == null
+          ? sorted
+          : sorted.filter(
+              (message) => new Date(message.at).getTime() > thresholdMs,
+            );
+
+      if (unreadMessages.length === 0) continue;
+
+      nextCounts[key] = unreadMessages.length;
+      const newest = unreadMessages[unreadMessages.length - 1];
+      const groupId = groupKeyFromChatKey(key);
+      const label = groupId
+        ? newest.groupName ||
+          customGroupsRef.current.find((group) => group.id === groupId)?.name ||
+          "Grupo"
+        : key === "__broadcast__"
+          ? groupNameRef.current
+          : newest.from;
+      const rawPreview = previewFromMessage(newest);
+      const preview =
+        key === "__broadcast__" || groupId
+          ? truncateText(`${newest.from}: ${rawPreview}`, 72)
+          : truncateText(rawPreview, 72);
+      const toastId = createMessageId();
+      const item = {
+        id: toastId,
+        chatKey: key,
+        chatLabel: label,
+        from: newest.from,
+        preview,
+        at: newest.at ? new Date(newest.at) : new Date(),
+        read: false,
+      };
+      notifItems.push(item);
+
+      if (
+        !newestToast ||
+        new Date(item.at).getTime() > new Date(newestToast.at).getTime()
+      ) {
+        newestToast = {
+          id: toastId,
+          chatKey: key,
+          from: newest.from,
+          chatLabel: label,
+          avatarUrl: contactsRef.current[newest.from]?.avatarUrl || "",
+          preview,
+          context: key === "__broadcast__" ? groupNameRef.current : groupId ? label : null,
+          at: item.at,
+        };
+      }
+    }
+
+    if (Object.keys(nextCounts).length === 0) return;
+
+    setUnreadCounts((prev) => ({ ...prev, ...nextCounts }));
+    setNotifications((prev) => {
+      const kept = prev.filter((item) => !nextCounts[item.chatKey]);
+      return [...notifItems, ...kept].slice(0, 40);
+    });
+    if (newestToast) setIncomingToast(newestToast);
   }
 
   function handleSelectUser(user) {
@@ -320,9 +467,69 @@ export default function App() {
     }
   }
 
-  function handleMarkAllNotificationsRead() {
-    setUnreadCounts({});
-    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  function handleTyping(isTyping) {
+    if (!isSocketOpen()) return;
+    if (selectedGroupId) {
+      const group = customGroups.find((item) => item.id === selectedGroupId);
+      sendTyping({
+        isTyping,
+        groupId: selectedGroupId,
+        members: group?.members || [],
+      });
+      return;
+    }
+    if (selectedUser) {
+      sendTyping({ isTyping, chat: selectedUser });
+      return;
+    }
+    sendTyping({ isTyping, chat: null });
+  }
+
+  function applyRemoteTyping(message) {
+    const from = message.from;
+    if (!from || from === usernameRef.current) return;
+
+    const key = message.groupId
+      ? chatKey(null, message.groupId)
+      : message.chat == null
+        ? chatKey(null)
+        : chatKey(from);
+
+    const timerKey = `${key}:${from}`;
+    if (typingTimersRef.current[timerKey]) {
+      clearTimeout(typingTimersRef.current[timerKey]);
+      delete typingTimersRef.current[timerKey];
+    }
+
+    setTypingByChat((prev) => {
+      const names = new Set(prev[key]?.names || []);
+      if (message.isTyping) names.add(from);
+      else names.delete(from);
+      if (names.size === 0) {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: { names: Array.from(names) } };
+    });
+
+    if (message.isTyping) {
+      typingTimersRef.current[timerKey] = setTimeout(() => {
+        setTypingByChat((prev) => {
+          const names = new Set(prev[key]?.names || []);
+          names.delete(from);
+          if (names.size === 0) {
+            if (!prev[key]) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          }
+          return { ...prev, [key]: { names: Array.from(names) } };
+        });
+        delete typingTimersRef.current[timerKey];
+      }, 3200);
+    }
   }
 
   function dismissIncomingToast(id) {
@@ -348,25 +555,50 @@ export default function App() {
     upsertCustomGroup({
       id: message.groupId,
       name: message.groupName || "Grupo",
-      admin: message.from || usernameRef.current,
       members: message.members || [],
     });
   }
 
-  function upsertCustomGroup(group) {
-    if (!group?.id) return;
-    const id = group.id;
+  function normalizeServerGroup(group) {
+    if (!group?.id) return null;
+    return {
+      id: group.id,
+      name: group.name || "Grupo",
+      avatarUrl: group.avatarUrl || "",
+      description: group.description || "",
+      admin: group.owner || group.admin || "",
+      members: Array.isArray(group.members) ? group.members.filter(Boolean) : [],
+    };
+  }
+
+  function upsertCustomGroup(group, { replaceMembers = false } = {}) {
+    const normalized = normalizeServerGroup(group);
+    if (!normalized) return;
+    const id = normalized.id;
     const me = usernameRef.current;
     setCustomGroups((prev) => {
       if (prev.some((g) => g.id === id)) {
         return prev.map((g) => {
           if (g.id !== id) return g;
-          const members = Array.from(
-            new Set([...(g.members || []), ...(group.members || []), me].filter(Boolean)),
-          );
+          const nextAdmin = normalized.admin || g.admin || "";
+          let members;
+          if (replaceMembers) {
+            members = [...normalized.members];
+            if (me && !members.includes(me) && (g.members || []).includes(me)) {
+              // Expulsado: se maneja en group_removed; no reinyectar.
+              members = members.filter(Boolean);
+            }
+          } else {
+            members = Array.from(
+              new Set([...(g.members || []), ...normalized.members, me].filter(Boolean)),
+            );
+          }
           return {
             ...g,
-            name: group.name || g.name,
+            name: normalized.name || g.name,
+            avatarUrl: normalized.avatarUrl || g.avatarUrl || "",
+            description: normalized.description || g.description || "",
+            admin: nextAdmin,
             members,
           };
         });
@@ -374,21 +606,35 @@ export default function App() {
       return [
         ...prev,
         {
-          id,
-          name: group.name || "Grupo",
-          avatarUrl: group.avatarUrl || "",
-          description: group.description || "",
-          admin: group.owner || group.admin || me,
+          ...normalized,
+          admin: normalized.admin || me,
           members: Array.from(
-            new Set([...(group.members || []), me].filter(Boolean)),
+            new Set([...normalized.members, me].filter(Boolean)),
           ),
         },
       ];
     });
+    setViewedGroup((prev) => {
+      if (!prev || prev.id !== id) return prev;
+      const nextAdmin = normalized.admin || prev.admin || "";
+      const members = replaceMembers
+        ? [...normalized.members]
+        : Array.from(
+            new Set([...(prev.members || []), ...normalized.members].filter(Boolean)),
+          );
+      return {
+        ...prev,
+        name: normalized.name || prev.name,
+        avatarUrl: normalized.avatarUrl || prev.avatarUrl || "",
+        description: normalized.description || prev.description || "",
+        admin: nextAdmin,
+        members,
+      };
+    });
   }
 
   function notifyGroupAdded(group, text = "Se te agregó a este grupo") {
-    upsertCustomGroup(group);
+    upsertCustomGroup(group, { replaceMembers: true });
     const key = chatKey(null, group.id);
     const notification = {
       id: createMessageId(),
@@ -553,8 +799,18 @@ export default function App() {
         [contactName]: {
           ...(prev[contactName] || stubContact(contactName)),
           username: contactName,
-          description: profile.description || prev[contactName]?.description || "",
-          avatarUrl: profile.avatarUrl || prev[contactName]?.avatarUrl || "",
+          description:
+            typeof profile.description === "string"
+              ? profile.description
+              : prev[contactName]?.description || "",
+          avatarUrl:
+            typeof profile.avatarUrl === "string"
+              ? profile.avatarUrl
+              : prev[contactName]?.avatarUrl || "",
+          email:
+            typeof profile.email === "string"
+              ? profile.email
+              : prev[contactName]?.email || "",
         },
       }));
     }
@@ -571,7 +827,10 @@ export default function App() {
       setDirectoryLoading(false);
       return;
     }
-    setDirectoryLoading(true);
+    // Si ya hay catálogo, no bloquees la UI: refresca en segundo plano.
+    if (directoryUsers.length === 0) {
+      setDirectoryLoading(true);
+    }
     requestDirectory();
   }
 
@@ -596,6 +855,13 @@ export default function App() {
     }
 
     setCustomGroups((prev) => [...prev, group]);
+    if (isSocketOpen()) {
+      sendCreateGroup({
+        groupId: id,
+        name: groupName,
+        members: group.members,
+      });
+    }
     handleSelectGroup(id);
     setOpenChatNonce((n) => n + 1);
     return { group };
@@ -641,15 +907,27 @@ export default function App() {
 
   function handleSaveGroup(nextGroup) {
     if (!nextGroup?.id) return;
-    if (nextGroup.admin !== username) return;
+    const adminName = (nextGroup.admin || "").toLowerCase();
+    if (!adminName || adminName !== username.toLowerCase()) return;
 
     if (nextGroup.id !== "general") {
+      const members = Array.from(
+        new Set([username, ...(nextGroup.members || [])].filter(Boolean)),
+      );
+      const saved = { ...nextGroup, admin: username, members };
       setCustomGroups((prev) =>
         prev.map((group) =>
-          group.id === nextGroup.id ? { ...group, ...nextGroup } : group,
+          group.id === saved.id ? { ...group, ...saved } : group,
         ),
       );
-      setViewedGroup(nextGroup);
+      setViewedGroup(saved);
+      if (isSocketOpen()) {
+        sendUpdateGroup({
+          groupId: saved.id,
+          name: saved.name,
+          members: saved.members,
+        });
+      }
       return;
     }
 
@@ -699,6 +977,9 @@ export default function App() {
     setDirectoryLoading(false);
     setUnreadCounts({});
     setNotifications([]);
+    setLastReadAt({});
+    lastReadAtRef.current = {};
+    setTypingByChat({});
     setIncomingToast(null);
     setIsViewingChat(false);
     setSuccess("");
@@ -727,6 +1008,14 @@ export default function App() {
           roleRef.current = "user";
           const wasAuthenticated = authenticatedRef.current;
           const local = loadLocalProfile(usernameRef.current) || {};
+          const canonicalUsername =
+            typeof message.username === "string" && message.username.trim()
+              ? message.username.trim()
+              : usernameRef.current;
+          if (canonicalUsername !== usernameRef.current) {
+            usernameRef.current = canonicalUsername;
+            setUsername(canonicalUsername);
+          }
           const nextDescription =
             typeof message.description === "string"
               ? message.description
@@ -735,16 +1024,20 @@ export default function App() {
             typeof message.avatarUrl === "string"
               ? message.avatarUrl
               : local.avatarUrl || "";
+          const nextEmail =
+            typeof message.email === "string" && message.email
+              ? message.email
+              : local.email || "";
 
           saveSession({
-            username: usernameRef.current,
+            username: canonicalUsername,
             password: passwordRef.current,
           });
-          setEmail(local.email || "");
+          setEmail(nextEmail);
           setDescription(nextDescription);
           setAvatarUrl(nextAvatar);
-          saveLocalProfile(usernameRef.current, {
-            email: local.email || "",
+          saveLocalProfile(canonicalUsername, {
+            email: nextEmail,
             description: nextDescription,
             avatarUrl: nextAvatar,
           });
@@ -765,6 +1058,8 @@ export default function App() {
             setDirectoryUsers([]);
             setUnreadCounts(unread.counts);
             setNotifications(unread.items);
+            setLastReadAt(unread.lastReadAt || {});
+            lastReadAtRef.current = unread.lastReadAt || {};
             setSelectedGroupId(null);
             setIsViewingChat(false);
             setGroupsData({
@@ -829,10 +1124,13 @@ export default function App() {
         if (message.ok) {
           const nextDescription = message.description || "";
           const nextAvatar = message.avatarUrl || "";
+          const nextEmail =
+            typeof message.email === "string" ? message.email : email;
+          setEmail(nextEmail);
           setDescription(nextDescription);
           setAvatarUrl(nextAvatar);
           saveLocalProfile(usernameRef.current, {
-            email,
+            email: nextEmail,
             description: nextDescription,
             avatarUrl: nextAvatar,
           });
@@ -869,6 +1167,10 @@ export default function App() {
                 typeof remote.description === "string"
                   ? remote.description
                   : base.description || "",
+              email:
+                typeof remote.email === "string"
+                  ? remote.email
+                  : base.email || "",
             };
           }
           return next;
@@ -880,21 +1182,51 @@ export default function App() {
           }
           return Array.from(merged);
         });
+        // Si el destinatario vuelve a conectarse, ✓ → ✓✓ (entregado, aún no visto).
+        setMessages((prev) =>
+          prev.map((item) => {
+            if (item.from !== usernameRef.current) return item;
+            if (item.status !== "sent") return item;
+            if (
+              (item.type === "private_message" || item.type === "file") &&
+              item.to &&
+              nextUsers.includes(item.to)
+            ) {
+              return { ...item, status: "delivered" };
+            }
+            return item;
+          }),
+        );
         refreshSession();
         break;
       }
       case "directory": {
         const list = Array.isArray(message.users) ? message.users : [];
-        setDirectoryUsers(
-          list
-            .filter((user) => user && typeof user.username === "string")
-            .map((user) => ({
+        const normalized = list
+          .filter((user) => user && typeof user.username === "string")
+          .map((user) => ({
+            username: user.username,
+            avatarUrl: typeof user.avatarUrl === "string" ? user.avatarUrl : "",
+            description:
+              typeof user.description === "string" ? user.description : "",
+            email: typeof user.email === "string" ? user.email : "",
+          }));
+        setDirectoryUsers(normalized);
+        // El directorio es la fuente de verdad: limpia fotos viejas en caché.
+        setContacts((prev) => {
+          const next = { ...prev };
+          for (const user of normalized) {
+            const base = next[user.username] || stubContact(user.username);
+            next[user.username] = {
+              ...base,
               username: user.username,
-              avatarUrl: typeof user.avatarUrl === "string" ? user.avatarUrl : "",
-              description:
-                typeof user.description === "string" ? user.description : "",
-            })),
-        );
+              avatarUrl: user.avatarUrl,
+              description: user.description || base.description || "",
+              email: user.email || base.email || "",
+            };
+          }
+          return next;
+        });
         setDirectoryLoading(false);
         setAdminUsers([]);
         setAdminGroups([]);
@@ -913,20 +1245,30 @@ export default function App() {
           return next;
         });
         for (const restoredMessage of restored.messages) {
-          if (restoredMessage.type === "group_message") {
-            ensureCustomGroupFromMessage(restoredMessage);
+          if (
+            restoredMessage.type === "group_message" ||
+            restoredMessage.type === "group_notice"
+          ) {
+            ensureCustomGroupFromMessage({
+              ...restoredMessage,
+              type: "group_message",
+            });
           }
         }
+        // Mensajes llegados offline → mismos avisos que estando en línea sin abrir el chat.
+        applyUnreadFromHistory(restored.messages);
         break;
       }
       case "group_list":
-        for (const group of message.groups || []) upsertCustomGroup(group);
+        for (const group of message.groups || []) {
+          upsertCustomGroup(group, { replaceMembers: true });
+        }
         break;
       case "group_added":
         notifyGroupAdded(message.group, message.message || undefined);
         break;
       case "group_updated":
-        upsertCustomGroup(message.group);
+        upsertCustomGroup(message.group, { replaceMembers: true });
         break;
       case "group_removed": {
         const removedId = message.group?.id;
@@ -981,17 +1323,38 @@ export default function App() {
       case "private_message":
       case "file":
       case "group_message":
-        if (message.type === "group_message") {
-          ensureCustomGroupFromMessage(message);
+      case "group_notice":
+        if (message.type === "group_message" || message.type === "group_notice") {
+          ensureCustomGroupFromMessage({
+            ...message,
+            type: "group_message",
+          });
         }
         if (message.from && message.from !== usernameRef.current) {
           ensureContact(message.from);
-          if (message.type !== "group_message") {
+          if (message.type !== "group_message" && message.type !== "group_notice") {
             setChatUsers((prev) =>
               prev.includes(message.from) ? prev : [...prev, message.from],
             );
           }
-          pushIncomingUnread(message);
+          const viewingGroup =
+            message.type === "group_notice" &&
+            selectedGroupIdRef.current === message.groupId;
+          if (message.type !== "group_notice" || !viewingGroup) {
+            pushIncomingUnread(message);
+          }
+          if (message.type !== "group_notice") {
+            applyRemoteTyping({
+              from: message.from,
+              isTyping: false,
+              groupId: message.type === "group_message" ? message.groupId : null,
+              chat:
+                message.type === "broadcast" ||
+                (message.type === "file" && !message.to)
+                  ? null
+                  : message.from,
+            });
+          }
         }
         setMessages((prev) => [
           ...prev,
@@ -999,7 +1362,12 @@ export default function App() {
             ...message,
             id: message.id || createMessageId(),
             at: new Date(),
-            status: message.from === usernameRef.current ? "sent" : undefined,
+            status:
+              message.type === "group_notice"
+                ? undefined
+                : message.from === usernameRef.current
+                  ? "delivered"
+                  : undefined,
           },
         ]);
         refreshSession();
@@ -1033,6 +1401,9 @@ export default function App() {
         refreshSession();
         break;
       }
+      case "typing":
+        applyRemoteTyping(message);
+        break;
       case "connection_closed":
         if (intentionalCloseRef.current) {
           intentionalCloseRef.current = false;
@@ -1071,7 +1442,7 @@ export default function App() {
 
     const trimmed = user.trim();
     if (!trimmed || !pass) {
-      setError("Completa usuario y contraseña");
+      setError("Completa usuario/correo y contraseña");
       return;
     }
 
@@ -1124,7 +1495,7 @@ export default function App() {
         members: activeGroup.members || [],
         message: text,
         at: new Date(),
-        status: open ? "sent" : "failed",
+        status: outgoingSharedStatus(open),
       };
       if (open) {
         sendGroupMessage({
@@ -1142,7 +1513,7 @@ export default function App() {
         to: selectedUser,
         message: text,
         at: new Date(),
-        status: open ? "sent" : "failed",
+        status: outgoingPrivateStatus(open, users.includes(selectedUser)),
       };
       if (open) sendPrivateMessage(selectedUser, text);
     } else {
@@ -1152,7 +1523,7 @@ export default function App() {
         from: username,
         message: text,
         at: new Date(),
-        status: open ? "sent" : "failed",
+        status: outgoingSharedStatus(open),
       };
       if (open) sendBroadcast(text);
     }
@@ -1164,13 +1535,11 @@ export default function App() {
     if (selectedGroupId) {
       throw new Error("Los archivos en grupos aún no están disponibles");
     }
-    if (selectedUser && !users.includes(selectedUser)) {
-      throw new Error("user_not_found");
-    }
 
     const data = await fileToBase64(file);
     const id = createMessageId();
     const open = isSocketOpen();
+    const recipientOnline = selectedUser ? users.includes(selectedUser) : true;
     const payload = {
       id,
       type: "file",
@@ -1180,11 +1549,13 @@ export default function App() {
       mimeType: file.type || undefined,
       data,
       at: new Date(),
-      status: open ? "sent" : "failed",
+      status: selectedUser
+        ? outgoingPrivateStatus(open, recipientOnline)
+        : outgoingSharedStatus(open),
     };
 
     if (open) {
-      sendFile(selectedUser || null, file.name, data);
+      sendFile(selectedUser || null, file.name, data, file.type || "");
     }
     setMessages((prev) => [...prev, payload]);
   }
@@ -1205,6 +1576,7 @@ export default function App() {
     sendUpdateProfile({
       avatarUrl: nextAvatar,
       description: nextDescription,
+      email: nextEmail,
     });
   }
 
@@ -1266,6 +1638,7 @@ export default function App() {
           contacts={contacts}
           unreadCounts={unreadCounts}
           notifications={notifications}
+          typingByChat={typingByChat}
           directoryUsers={directoryUsers}
           directoryLoading={directoryLoading}
           openChatNonce={openChatNonce}
@@ -1275,6 +1648,7 @@ export default function App() {
           onViewingChange={handleViewingChange}
           onSend={handleSend}
           onSendFile={handleSendFile}
+          onTyping={handleTyping}
           onOpenProfile={() => openOwnProfile("home")}
           onOpenContactProfile={(name) => openContactProfile(name, "home")}
           onOpenGroupInfo={openGroupInfo}
@@ -1374,6 +1748,9 @@ export default function App() {
                 currentUser={username}
                 onlineUsers={users}
                 contacts={contacts}
+                directoryUsers={directoryUsers}
+                directoryLoading={directoryLoading}
+                onRequestDirectory={handleRequestDirectory}
                 onBack={closeOverlay}
                 onOpenMember={(member) => openContactProfile(member, "group")}
                 onSave={handleSaveGroup}

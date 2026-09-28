@@ -157,6 +157,25 @@ El servidor reenvía al interesado:
 - Sala general: broadcast a los demás con
   `{"type":"read_receipt","from":"<lector>","chat":null}`.
 
+### Indicador de escritura
+```json
+{ "type": "typing", "chat": "Usuario2", "isTyping": true }
+```
+
+Sala general: `chat: null`. Grupo:
+
+```json
+{
+  "type": "typing",
+  "groupId": "abc-123",
+  "members": ["Ana", "Carlos"],
+  "isTyping": true
+}
+```
+
+El servidor solo reenvía el aviso (no lo guarda). En privado responde al peer
+con `from` del que escribe y `chat` = ese usuario. `isTyping: false` cancela.
+
 ## Servidor → Cliente
 
 El servidor agrega el campo `from` a los mensajes que reenvía:

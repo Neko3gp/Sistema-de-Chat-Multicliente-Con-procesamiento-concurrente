@@ -15,13 +15,13 @@ export default function Login({ onSubmit, onGoRegister, error }) {
         <p className="auth-subtitle">Entra al chat multicliente</p>
 
         <label>
-          Usuario
+          Usuario o correo
           <input
             name="identifier"
             type="text"
             required
             autoComplete="username"
-            placeholder="Tu nombre de usuario"
+            placeholder="Nombre o correo@uach.mx"
           />
         </label>
 

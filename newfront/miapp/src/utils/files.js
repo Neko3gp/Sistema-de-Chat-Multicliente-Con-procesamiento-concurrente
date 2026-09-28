@@ -26,8 +26,16 @@ export function getMimeFromFilename(filename = "") {
   if (/\.wav$/.test(name)) return "audio/wav";
   if (/\.ogg$/.test(name)) return "audio/ogg";
   if (/\.m4a$/.test(name)) return "audio/mp4";
+  if (/\.webm$/.test(name)) return "audio/webm";
   if (/\.pdf$/.test(name)) return "application/pdf";
+  if (/\.txt$/.test(name)) return "text/plain";
   return "application/octet-stream";
+}
+
+export function isPdfFile(filename = "", mimeType = "") {
+  const mime = (mimeType || "").toLowerCase();
+  const name = (filename || "").toLowerCase();
+  return mime === "application/pdf" || /\.pdf$/.test(name);
 }
 
 export function fileToBase64(file) {
@@ -56,6 +64,27 @@ export function buildFileDataUrl(data, filename = "", mimeType = "") {
   if (!data) return null;
   const mime = mimeType || getMimeFromFilename(filename);
   return `data:${mime};base64,${data}`;
+}
+
+export function buildFileBlobUrl(data, filename = "", mimeType = "") {
+  if (!data) return null;
+  const mime = mimeType || getMimeFromFilename(filename);
+  try {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch {
+    return buildFileDataUrl(data, filename, mimeType);
+  }
+}
+
+export function revokeBlobUrl(url) {
+  if (typeof url === "string" && url.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export { MAX_FILE_BYTES };

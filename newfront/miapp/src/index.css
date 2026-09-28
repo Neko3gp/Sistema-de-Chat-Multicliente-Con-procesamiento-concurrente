@@ -231,6 +231,12 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  --safe-top: calc(env(safe-area-inset-top, 0px) + 16px);
+  --safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
 }
 
 body {
@@ -267,6 +273,19 @@ input,
 textarea,
 select {
   font: inherit;
+  outline: none;
+}
+
+button:focus,
+button:focus-visible,
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 input,
