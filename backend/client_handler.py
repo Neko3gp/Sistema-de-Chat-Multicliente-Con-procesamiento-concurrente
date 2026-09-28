@@ -43,6 +43,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
             raw = recv_frame(client_socket)
             if raw is None:
                 break
+            if connection is not None and connection.username is not None:
+                username = connection.username
 
             try:
                 message = json.loads(raw)
@@ -98,6 +100,14 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 if role == "admin":
                     connection_manager.monitor_hub.subscribe(connection)
                 else:
+                    _reply(connection, {
+                        "type": "history",
+                        "messages": database.get_chat_history(login_username),
+                    })
+                    _reply(connection, {
+                        "type": "group_list",
+                        "groups": database.get_user_groups(login_username),
+                    })
                     _broadcast_user_list(connection_manager)
                 continue
 
@@ -106,6 +116,13 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     _reply(connection, {"type": "error", "reason": "forbidden"})
                 else:
                     connection_manager.monitor_hub.subscribe(connection)
+                continue
+
+            if msg_type.startswith("admin_"):
+                if connection.role != "admin":
+                    _reply(connection, {"type": "error", "reason": "forbidden"})
+                else:
+                    _handle_admin_request(connection, connection_manager, msg_type, message)
                 continue
 
             # El monitor es exclusivo de admins; el chat requiere una sesión user.
@@ -190,6 +207,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     "members": unique_members,
                     "message": text.strip(),
                 }
+                if database.get_group(group_id.strip()) is None:
+                    database.save_group(group_id.strip(), group_name or "Grupo", username, unique_members)
                 connection_manager.monitor_hub.record_message(len(raw.encode("utf-8")))
                 message_queue.put({"message": payload, "connection_manager": connection_manager})
                 continue
@@ -245,6 +264,9 @@ def process_message(item):
 
     msg_type = message.get("type")
 
+    if msg_type in {"broadcast", "private_message", "file", "group_message"}:
+        database.save_chat_message(message)
+
     if msg_type == "broadcast":
         count = cm.broadcast(message, exclude=message.get("from"))
         log_event("broadcast", message.get("from"), recipients=count)
@@ -254,9 +276,10 @@ def process_message(item):
         if target:
             target.send(message)
         else:
-            sender = cm.get(message.get("from"))
-            if sender:
-                _reply(sender, {"type": "error", "reason": "user_not_found"})
+            if database.get_user_role(message.get("to")) is None:
+                sender = cm.get(message.get("from"))
+                if sender:
+                    _reply(sender, {"type": "error", "reason": "user_not_found"})
 
     elif msg_type == "group_message":
         sender_name = message.get("from")
@@ -293,10 +316,130 @@ def process_message(item):
             target = cm.get(destination)
             if target:
                 target.send(message)
-            else:
+            elif database.get_user_role(destination) is None:
                 sender = cm.get(message.get("from"))
                 if sender:
                     _reply(sender, {"type": "error", "reason": "user_not_found"})
+
+
+def _handle_admin_request(connection, connection_manager, msg_type, message):
+    """Ejecuta operaciones CRUD administrativas detrás de la sesión admin."""
+    if msg_type == "admin_list_users":
+        users = database.list_admin_users()
+        online = set(connection_manager.all_usernames())
+        for user in users:
+            user["online"] = user["username"] in online
+        _reply(connection, {"type": "admin_users", "users": users})
+        return
+    if msg_type == "admin_create_user":
+        username = message.get("username")
+        password = message.get("password")
+        role = message.get("role", "user")
+        ok = isinstance(username, str) and isinstance(password, str) and bool(password)
+        if ok:
+            try:
+                ok = database.create_user(username.strip(), password, role)
+            except ValueError:
+                ok = False
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": ok,
+                             "reason": None if ok else "invalid_user" if role not in {"user", "admin"} else "username_taken"})
+        return
+    if msg_type == "admin_update_user":
+        username = message.get("username")
+        new_username = (message.get("newUsername") or username or "").strip()
+        if new_username != username:
+            ok = database.rename_user(username, new_username)
+            target = connection_manager.get(username)
+            if ok and target:
+                ok = connection_manager.rename(username, new_username, target)
+                if ok:
+                    target.send({"type": "username_changed", "username": new_username})
+            if not ok:
+                _reply(connection, {"type": "admin_result", "action": msg_type, "ok": False,
+                                     "reason": "username_taken"})
+                return
+            username = new_username
+        ok = database.update_user_as_admin(
+            username,
+            password=message.get("password") or None,
+            role=message.get("role"),
+            avatar_url=message.get("avatarUrl"),
+            description=message.get("description"),
+        )
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": ok,
+                     "reason": None if ok else "invalid_user", "username": username})
+        return
+    if msg_type == "admin_delete_user":
+        username = message.get("username")
+        if username == connection.username:
+            ok = False
+        else:
+            target = connection_manager.get(username)
+            if target:
+                target.close("cuenta eliminada por un administrador")
+            ok = database.delete_user(username)
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": ok,
+                             "reason": None if ok else "cannot_delete_user"})
+        if ok:
+            _reply(connection, {"type": "admin_users", "users": _admin_users(connection_manager)})
+        return
+    if msg_type == "admin_list_groups":
+        _reply(connection, {"type": "admin_groups", "groups": database.list_groups()})
+        return
+    if msg_type == "admin_create_group":
+        group = database.create_group(message.get("name"), connection.username, message.get("members"))
+        if group:
+            _notify_group_members(connection_manager, group, "group_added")
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": group is not None,
+                             "reason": None if group else "invalid_group", "group": group})
+        return
+    if msg_type == "admin_update_group":
+        previous = database.get_group(message.get("groupId"))
+        group = database.save_group(
+            message.get("groupId"), message.get("name"), connection.username, message.get("members"),
+        )
+        if group:
+            previous_members = set(previous["members"] if previous else [])
+            current_members = set(group["members"])
+            removed = previous_members - current_members
+            if removed and previous:
+                _notify_group_members(connection_manager, previous, "group_removed", removed)
+            _notify_group_members(connection_manager, group, "group_updated")
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": group is not None,
+                             "reason": None if group else "invalid_group", "group": group})
+        return
+    if msg_type == "admin_delete_group":
+        group_id = message.get("groupId")
+        previous = next((group for group in database.list_groups() if group["id"] == group_id), None)
+        ok = database.delete_group(message.get("groupId"))
+        if ok and previous:
+            _notify_group_members(connection_manager, previous, "group_deleted")
+        _reply(connection, {"type": "admin_result", "action": msg_type, "ok": ok,
+                             "reason": None if ok else "group_not_found"})
+        return
+    _reply(connection, {"type": "error", "reason": "invalid_message"})
+
+
+def _admin_users(connection_manager):
+    online = set(connection_manager.all_usernames())
+    users = database.list_admin_users()
+    for user in users:
+        user["online"] = user["username"] in online
+    return users
+
+
+def _notify_group_members(connection_manager, group, event_type, members=None):
+    """Notifica a los integrantes conectados de un cambio administrativo."""
+    payload = {
+        "type": event_type,
+        "group": group,
+        "message": "Se te agregó a este grupo" if event_type == "group_added" else None,
+    }
+    recipients = members if members is not None else group.get("members", [])
+    for member in recipients:
+        target = connection_manager.get(member)
+        if target:
+            target.send(payload)
 
 
 def _reply(connection, message: dict):

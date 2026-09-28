@@ -30,6 +30,52 @@ El administrador queda suscrito automáticamente tras el login. Esta solicitud
 es idempotente para un admin ya suscrito. Una conexión sin rol `admin` recibe
 `{"type":"error","reason":"forbidden"}`, incluso antes del login.
 
+### Administración de usuarios y grupos
+
+Estos mensajes requieren una sesión autenticada con rol `admin`. Las respuestas
+de cambio usan `admin_result` con `ok`, `action` y, si corresponde, `reason`.
+
+```json
+{ "type": "admin_list_users" }
+{ "type": "admin_create_user", "username": "user21", "password": "test1234", "role": "user" }
+{ "type": "admin_update_user", "username": "user21", "role": "user", "description": "Alumno" }
+{ "type": "admin_delete_user", "username": "user21" }
+```
+
+El servidor responde a `admin_list_users` con `admin_users`, incluyendo rol,
+perfil, fecha de creación y estado `online`. Un administrador no puede
+eliminarse a sí mismo.
+
+```json
+{ "type": "admin_list_groups" }
+{ "type": "admin_create_group", "name": "Equipo", "members": ["user01", "user02"] }
+{ "type": "admin_update_group", "groupId": "abc-123", "name": "Equipo 2", "members": ["user01"] }
+{ "type": "admin_delete_group", "groupId": "abc-123" }
+```
+
+Los grupos administrativos se guardan en SQLite y solo incluyen cuentas de
+chat existentes. Una cuenta normal que intente usar estos mensajes recibe
+`forbidden`.
+
+Al iniciar sesión, un usuario recibe sus grupos actuales:
+
+```json
+{ "type": "group_list", "groups": [] }
+```
+
+Cuando un administrador agrega integrantes a un grupo, cada integrante
+conectado recibe `group_added` con el grupo y el mensaje visible
+`"Se te agregó a este grupo"`. `group_updated`, `group_removed` y `group_deleted` notifican
+los cambios posteriores.
+
+Si un administrador renombra una cuenta conectada, esa sesión recibe:
+
+```json
+{ "type": "username_changed", "username": "nuevo_nombre" }
+```
+
+El cliente debe actualizar su sesión y sus referencias locales al nuevo nombre.
+
 ### Mensaje general (broadcast)
 ```json
 { "type": "broadcast", "message": "Hola a todos" }
@@ -51,8 +97,9 @@ es idempotente para un admin ya suscrito. Una conexión sin rol `admin` recibe
 ```
 
 Si se omite `to` (o va vacío), el archivo se difunde a la sala general como un
-broadcast. Con `to`, solo llega a ese usuario conectado; si no está en línea se
-responde `user_not_found`.
+broadcast. Con `to`, llega al usuario si está conectado y queda guardado para
+su siguiente login si la cuenta existe. Solo se responde `user_not_found` si
+el destinatario no está registrado.
 
 El archivo decodificado puede pesar como máximo **5 MiB (5 242 880 bytes)**.
 Si supera ese límite, se responde `{"type":"error","reason":"file_too_large"}`
@@ -201,6 +248,20 @@ Si las credenciales no son válidas:
 { "type": "login_result", "ok": false, "reason": "invalid_credentials" }
 ```
 
+### Historial de mensajes
+
+Después de un login correcto de un usuario, el servidor envía los mensajes
+guardados en SQLite, incluidos los privados y de grupo enviados mientras el
+destinatario estaba desconectado:
+
+```json
+{ "type": "history", "messages": [] }
+```
+
+El servidor conserva como máximo los últimos 500 mensajes visibles para cada
+usuario. Los archivos también se guardan como parte del mensaje y respetan el
+límite de 5 MiB.
+
 Si el usuario ya tiene una sesión conectada, se conserva la conexión original:
 
 ```json
@@ -274,8 +335,9 @@ eventos próximos a la suscripción pueden describir el mismo hecho.
 `connected` cuenta usuarios de chat, excluye administradores; `threads` incluye
 todos los hilos activos del proceso y `queue_size` mide la cola de entrada del
 chat. `msgs_total` y `bytes_total` acumulan mensajes autenticados de tipo
-`broadcast`, `private_message` o `file` y sus bytes JSON UTF-8 originales,
-incluidos los que después se rechacen por archivo o destino inválido. No
+`broadcast`, `private_message`, `group_message` o `file` y sus bytes JSON UTF-8
+originales, incluidos los que después se rechacen por archivo o destino
+inválido. No
 cuentan login, registro, suscripción ni envíos del monitor. `msgs_per_sec`
 corresponde al intervalo de muestreo, y los totales comienzan en cero al arrancar.
 
@@ -296,7 +358,8 @@ proyecto. `CHAT_LOG_DIR` permite cambiar ese directorio (usado por las pruebas).
 - No hay que reconectar entre mensajes: se registra o inicia sesión usando el
   mismo socket y, solo después de un `login_result` exitoso, se envían mensajes
   de chat.
-- Los mensajes `broadcast`, `private_message` y `file` requieren autenticación.
+- Los mensajes `broadcast`, `private_message`, `group_message` y `file` requieren
+  autenticación.
 - El límite implementado de archivos es 5 MiB decodificados; la conexión se
   cierra si su cola de salida de 1000 mensajes se llena.
 - Cualquier campo nuevo que se necesite (por ejemplo para salas privadas a

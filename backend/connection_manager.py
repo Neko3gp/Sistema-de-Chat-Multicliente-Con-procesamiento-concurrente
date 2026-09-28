@@ -149,6 +149,20 @@ class ConnectionManager:
                 return True
             return False
 
+    def rename(self, username, new_username, connection):
+        """Actualiza una sesión activa después de renombrar su cuenta."""
+        with self._lock:
+            if self._sessions.get(username) is not connection or new_username in self._sessions:
+                return False
+            del self._sessions[username]
+            self._sessions[new_username] = connection
+            if connection.role == "user":
+                self._clients.pop(username, None)
+                self._clients[new_username] = connection
+            connection.username = new_username
+            connection._writer.name = f"writer-{new_username}"
+            return True
+
     def get(self, username):
         """Obtiene una conexión sin mantener el lock durante el envío."""
         with self._lock:

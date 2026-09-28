@@ -19,15 +19,17 @@
    la salida y eliminación por identidad de conexión. Mantener errores de
    credenciales, archivos/base64 y destinos inexistentes. El monitor descarta
    sus eventos más antiguos al saturarse para no esperar en el flujo del chat.
-4. **Usuarios y persistencia.** Indicar ruta absoluta de SQLite, override
+4. **Usuarios, historial y persistencia.** Indicar ruta absoluta de SQLite, override
    `CHAT_DB_PATH`, migración de `role`, PBKDF2-SHA256 con sal aleatoria y
-   compatibilidad SHA-256. Mostrar `seed_users.py --count 20`, credenciales de
-   prueba y `CHAT_ADMIN_PASSWORD`; aclarar que el seed conserva cuentas existentes.
+   compatibilidad SHA-256. El historial de mensajes se guarda en SQLite y se
+   entrega como `history` después del login. Mostrar `seed_users.py --count 20`,
+   credenciales de prueba y `CHAT_ADMIN_PASSWORD`; aclarar que el seed conserva
+   cuentas existentes.
 5. **Logs y monitor.** Describir consola + `logs/server.log`, nombres de hilo,
    historial circular de 200 entradas, snapshot y eventos sin contenido de chat.
    Explicar estadísticas cada 2 s y exclusión de admins de user_list/broadcasts.
-   La interfaz de monitoreo React es trabajo separado; el CLI permite demostrar
-   el contrato ya implementado.
+   La interfaz de monitoreo React ya está integrada para la cuenta `admin`; el
+   CLI sigue disponible como demostración alternativa del mismo contrato.
 6. **Hilos vs. procesos (requisito 6b).** Incorporar la tabla de
    `HILOS_VS_PROCESOS.md`: 200 ecos por cliente, N=10 y 20, una corrida por
    configuración, spawn y mismos mensajes. Explicar carga de E/S, poca relevancia

@@ -134,6 +134,46 @@ export function isSocketOpen() {
   return Boolean(socket && socket.readyState === WebSocket.OPEN);
 }
 
+export function requestAdminUsers() {
+  socket?.send(JSON.stringify({ type: "admin_list_users" }));
+}
+
+export function requestAdminGroups() {
+  socket?.send(JSON.stringify({ type: "admin_list_groups" }));
+}
+
+export function adminCreateUser({ username, password, role = "user" }) {
+  socket?.send(JSON.stringify({ type: "admin_create_user", username, password, role }));
+}
+
+export function adminUpdateUser({ username, newUsername, password, role, avatarUrl, description }) {
+  socket?.send(JSON.stringify({
+    type: "admin_update_user",
+    username,
+    newUsername,
+    password,
+    role,
+    avatarUrl,
+    description,
+  }));
+}
+
+export function adminDeleteUser(username) {
+  socket?.send(JSON.stringify({ type: "admin_delete_user", username }));
+}
+
+export function adminCreateGroup({ name, members }) {
+  socket?.send(JSON.stringify({ type: "admin_create_group", name, members }));
+}
+
+export function adminUpdateGroup({ groupId, name, members }) {
+  socket?.send(JSON.stringify({ type: "admin_update_group", groupId, name, members }));
+}
+
+export function adminDeleteGroup(groupId) {
+  socket?.send(JSON.stringify({ type: "admin_delete_group", groupId }));
+}
+
 export function disconnectSocket({ silent = false } = {}) {
   if (!socket) return;
   if (silent) suppressCloseEvent = true;

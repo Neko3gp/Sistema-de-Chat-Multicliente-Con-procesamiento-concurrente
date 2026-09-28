@@ -1,4 +1,8 @@
-# Validación integrada del estado T2–T5
+# Validación histórica del estado T2–T5
+
+> Este documento conserva la evidencia de una revisión intermedia. No describe
+> el estado completo actual: T6–T10, el panel React y el historial persistente
+> se documentan en el README y en los documentos enlazados desde `docs/INDICE.md`.
 
 Fecha: 2026-09-27. Rama: `dev`. Backend evaluado: `4cb1ba6` (incluye T2,
 T3, T4 y T5). Entorno: Python 3.14.7 y Node.js 24.18.1 en Linux.
@@ -40,4 +44,5 @@ se desarrolla por separado.
 Se validó lo implementado hasta T5. No se repitió la matriz histórica de
 escalabilidad 1–50 ni se adelantó la prueba T10 de 20 usuarios durante 30 s.
 Las mediciones de esta revisión son comprobaciones locales de funcionamiento,
-no resultados del ensayo final de rendimiento. T6–T10 siguen pendientes.
+no resultados del ensayo final de rendimiento. T6–T10 se completaron después y
+su evidencia está en `RESULTADOS_FINALES.md` y `HILOS_VS_PROCESOS.md`.

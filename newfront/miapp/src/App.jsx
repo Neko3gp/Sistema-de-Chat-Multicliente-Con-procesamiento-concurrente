@@ -18,6 +18,14 @@ import {
   sendReadReceipt,
   requestDirectory,
   isSocketOpen,
+  requestAdminUsers,
+  requestAdminGroups,
+  adminCreateUser,
+  adminUpdateUser,
+  adminDeleteUser,
+  adminCreateGroup,
+  adminUpdateGroup,
+  adminDeleteGroup,
   disconnectSocket,
 } from "./services/socket";
 import { groups as mockGroups } from "./data/conversations";
@@ -77,6 +85,14 @@ function mapServerReason(reason) {
       return "No tienes permiso para esa acción";
     case "invalid_message":
       return "Mensaje inválido";
+    case "invalid_user":
+      return "Los datos del usuario no son válidos";
+    case "cannot_delete_user":
+      return "No puedes eliminar esa cuenta desde esta sesión";
+    case "invalid_group":
+      return "El grupo necesita nombre e integrantes válidos";
+    case "group_not_found":
+      return "El grupo ya no existe";
     case "connection_failed":
       return "No se pudo conectar al servidor";
     case "connection_closed":
@@ -93,6 +109,28 @@ function stubContact(name) {
     description: "",
     avatarUrl: "",
     lastSeen: new Date(),
+  };
+}
+
+function hydrateHistory(history, owner) {
+  const messages = Array.isArray(history) ? history : [];
+  const chatUsers = new Set();
+  const contacts = {};
+  for (const message of messages) {
+    if (message.type === "group_message") continue;
+    const peer = message.from === owner ? message.to : message.from;
+    if (!peer || peer === owner) continue;
+    chatUsers.add(peer);
+    contacts[peer] = stubContact(peer);
+  }
+  return {
+    messages: messages.map((message) => ({
+      ...message,
+      id: message.id || createMessageId(),
+      at: message.at ? new Date(message.at) : new Date(),
+    })),
+    chatUsers: Array.from(chatUsers),
+    contacts,
   };
 }
 
@@ -130,6 +168,8 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [monitor, dispatchMonitor] = useReducer(monitorReducer, initialMonitorState);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminGroups, setAdminGroups] = useState([]);
 
   const usernameRef = useRef("");
   const passwordRef = useRef("");
@@ -305,18 +345,28 @@ export default function App() {
 
   function ensureCustomGroupFromMessage(message) {
     if (message.type !== "group_message" || !message.groupId) return;
-    const id = message.groupId;
+    upsertCustomGroup({
+      id: message.groupId,
+      name: message.groupName || "Grupo",
+      admin: message.from || usernameRef.current,
+      members: message.members || [],
+    });
+  }
+
+  function upsertCustomGroup(group) {
+    if (!group?.id) return;
+    const id = group.id;
     const me = usernameRef.current;
     setCustomGroups((prev) => {
       if (prev.some((g) => g.id === id)) {
         return prev.map((g) => {
           if (g.id !== id) return g;
           const members = Array.from(
-            new Set([...(g.members || []), ...(message.members || []), me].filter(Boolean)),
+            new Set([...(g.members || []), ...(group.members || []), me].filter(Boolean)),
           );
           return {
             ...g,
-            name: message.groupName || g.name,
+            name: group.name || g.name,
             members,
           };
         });
@@ -325,15 +375,40 @@ export default function App() {
         ...prev,
         {
           id,
-          name: message.groupName || "Grupo",
-          avatarUrl: "",
-          description: "",
-          admin: message.from || me,
+          name: group.name || "Grupo",
+          avatarUrl: group.avatarUrl || "",
+          description: group.description || "",
+          admin: group.owner || group.admin || me,
           members: Array.from(
-            new Set([...(message.members || []), me].filter(Boolean)),
+            new Set([...(group.members || []), me].filter(Boolean)),
           ),
         },
       ];
+    });
+  }
+
+  function notifyGroupAdded(group, text = "Se te agregó a este grupo") {
+    upsertCustomGroup(group);
+    const key = chatKey(null, group.id);
+    const notification = {
+      id: createMessageId(),
+      chatKey: key,
+      chatLabel: group.name,
+      from: "Administrador",
+      preview: text,
+      at: new Date(),
+      read: false,
+    };
+    setUnreadCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
+    setNotifications((prev) => [notification, ...prev].slice(0, 40));
+    setIncomingToast({
+      id: notification.id,
+      chatKey: key,
+      from: "Administrador",
+      chatLabel: group.name,
+      avatarUrl: "",
+      preview: text,
+      context: "Grupos de chat",
     });
   }
 
@@ -644,6 +719,8 @@ export default function App() {
             setAuthenticated(true);
             setReconnecting(false);
             setView("monitor");
+            requestAdminUsers();
+            requestAdminGroups();
             return;
           }
 
@@ -715,6 +792,21 @@ export default function App() {
       case "monitor_stats":
         if (roleRef.current === "admin") {
           dispatchMonitor({ ...message, receivedAt: Date.now() });
+        }
+        break;
+      case "admin_users":
+        setAdminUsers(Array.isArray(message.users) ? message.users : []);
+        break;
+      case "admin_groups":
+        setAdminGroups(Array.isArray(message.groups) ? message.groups : []);
+        break;
+      case "admin_result":
+        if (message.ok) {
+          setError("");
+          requestAdminUsers();
+          requestAdminGroups();
+        } else {
+          setError(mapServerReason(message.reason || "invalid_message"));
         }
         break;
       case "register_result":
@@ -804,7 +896,85 @@ export default function App() {
             })),
         );
         setDirectoryLoading(false);
+        setAdminUsers([]);
+        setAdminGroups([]);
         refreshSession();
+        break;
+      }
+      case "history": {
+        const restored = hydrateHistory(message.messages, usernameRef.current);
+        setMessages(restored.messages);
+        setChatUsers((prev) => Array.from(new Set([...prev, ...restored.chatUsers])));
+        setContacts((prev) => {
+          const next = { ...prev };
+          for (const [name, profile] of Object.entries(restored.contacts)) {
+            next[name] = next[name] || profile;
+          }
+          return next;
+        });
+        for (const restoredMessage of restored.messages) {
+          if (restoredMessage.type === "group_message") {
+            ensureCustomGroupFromMessage(restoredMessage);
+          }
+        }
+        break;
+      }
+      case "group_list":
+        for (const group of message.groups || []) upsertCustomGroup(group);
+        break;
+      case "group_added":
+        notifyGroupAdded(message.group, message.message || undefined);
+        break;
+      case "group_updated":
+        upsertCustomGroup(message.group);
+        break;
+      case "group_removed": {
+        const removedId = message.group?.id;
+        setCustomGroups((prev) => prev.filter((group) => group.id !== removedId));
+        if (selectedGroupIdRef.current === removedId) {
+          setSelectedGroupId(null);
+          setView("home");
+        }
+        const key = chatKey(null, removedId);
+        const notification = {
+          id: createMessageId(),
+          chatKey: key,
+          chatLabel: message.group?.name || "Grupo",
+          from: "Administrador",
+          preview: "Se te removió de este grupo",
+          at: new Date(),
+          read: false,
+        };
+        setUnreadCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
+        setNotifications((prev) => [notification, ...prev].slice(0, 40));
+        setIncomingToast({
+          id: notification.id,
+          chatKey: key,
+          from: "Administrador",
+          chatLabel: message.group?.name || "Grupo",
+          avatarUrl: "",
+          preview: notification.preview,
+          context: "Grupos de chat",
+        });
+        break;
+      }
+      case "group_deleted":
+        setCustomGroups((prev) => prev.filter((group) => group.id !== message.group?.id));
+        break;
+      case "username_changed": {
+        const nextUsername = message.username;
+        if (!nextUsername) break;
+        const previousUsername = usernameRef.current;
+        usernameRef.current = nextUsername;
+        setUsername(nextUsername);
+        saveSession({ username: nextUsername, password: passwordRef.current });
+        setChatUsers((prev) => prev.map((name) => name === previousUsername ? nextUsername : name));
+        setMessages((prev) => prev.map((item) => ({
+          ...item,
+          from: item.from === previousUsername ? nextUsername : item.from,
+          to: item.to === previousUsername ? nextUsername : item.to,
+          members: Array.isArray(item.members) ? item.members.map((name) => name === previousUsername ? nextUsername : name) : item.members,
+        })));
         break;
       }
       case "broadcast":
@@ -1055,6 +1225,14 @@ export default function App() {
         onLogout={handleLogout}
         themePreference={themePreference}
         onThemeChange={handleThemeChange}
+          adminUsers={adminUsers}
+          adminGroups={adminGroups}
+          onCreateUser={adminCreateUser}
+          onUpdateUser={adminUpdateUser}
+          onDeleteUser={adminDeleteUser}
+          onCreateGroup={adminCreateGroup}
+          onUpdateGroup={adminUpdateGroup}
+          onDeleteGroup={adminDeleteGroup}
       />
     );
   }

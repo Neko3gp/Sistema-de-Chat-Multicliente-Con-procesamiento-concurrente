@@ -1,169 +1,222 @@
-# Sistema de Chat Multicliente con Procesamiento Concurrente
+# Chat Multicliente con Procesamiento Concurrente
 
 Proyecto 1 de Cómputo Paralelo y Distribuido, Universidad Autónoma de Chihuahua.
-Chat con registro, login, mensajes privados, difusión y archivos de hasta 5 MiB.
-Servidor Python con sockets TCP, hilos, locks, colas y SQLite; interfaz React.
 
-## Arquitectura actual
+Aplicación de chat en tiempo real con múltiples clientes concurrentes. El
+servidor está escrito en Python y utiliza sockets TCP, WebSocket implementado
+manualmente, `threading`, `threading.Lock`, `queue.Queue` y SQLite. La interfaz
+web está escrita en React.
 
-El navegador habla WebSocket. El servidor implementa el handshake y los frames
-manualmente en `backend/websocket_handler.py` sobre `socket.socket()` TCP.
-No utiliza frameworks ni asyncio en el servidor.
+## 1. Cumplimiento del enunciado
 
-Cada conexión tiene un hilo lector y, después del handshake, un hilo escritor.
-Todos los envíos pasan por `Connection.send()` y su cola de salida de hasta
-1000 mensajes. Solo el escritor llama a `send_frame`; una salida saturada cierra
-ese cliente. El worker de entrada resuelve destinos y encola sin esperar a que
-el destinatario lea del socket.
+La matriz completa, con la evidencia técnica de cada requisito, está en
+[`docs/REQUISITOS_MAESTRO.md`](docs/REQUISITOS_MAESTRO.md).
 
-La validación base64 se realiza por bloques en el lector del emisor, antes de
-encolar el archivo. El escritor serializa sus metadatos e inserta el base64 ya
-validado; el desenmascarado WebSocket usa tablas de traducción por bloques.
-Estas operaciones evitan ocupar el worker compartido con el contenido grande.
+| Área solicitada | Implementación actual |
+| --- | --- |
+| Servidor multicliente | `socket.accept()` crea un hilo lector y un escritor exclusivo por conexión. |
+| Mensajes | Broadcast, privados, grupos y entrega en tiempo real mediante WebSocket sobre TCP. |
+| Interfaz | React para login, registro, conversaciones, archivos, grupos y monitor administrativo. |
+| Archivos | Base64 dentro de JSON, límite de 5 MiB, validación por bloques y entrega privada o general. |
+| Concurrencia | Hilos por conexión, worker de mensajes, colas de salida y `MonitorHub`. |
+| Sincronización | Locks para sesiones compartidas y una cola de salida por conexión. |
+| Persistencia | Usuarios, perfiles e historial de mensajes en SQLite. |
+| Seguridad | PBKDF2-SHA256 para cuentas nuevas, roles `user`/`admin`, sesiones duplicadas rechazadas. |
+| Rendimiento | Pruebas de carga, RTT y comparación controlada entre hilos y procesos. |
+
+## 2. Arquitectura
 
 ```mermaid
 flowchart LR
-    Cliente[Cliente web o Python] -->|WebSocket sobre TCP| Lector[Hilo lector por cliente]
-    Lector --> Entrada[queue.Queue de entrada]
-    Entrada --> Worker[queue-worker]
-    Worker --> Salida[Cola de salida por conexión]
-    Salida --> Escritor[Hilo escritor exclusivo]
-    Escritor --> Cliente
-    Lector --> Registro[ConnectionManager y locks]
-    Lector --> Log[Logs y buffer de 200 entradas]
-    Worker --> Log
-    Log --> Eventos[Cola de monitor: 1000 eventos]
-    Eventos --> Hub[monitor-hub]
-    Stats[monitor-stats cada 2 segundos] --> Eventos
-    Hub --> Admin[Cola y escritor del administrador]
+    Browser[React en navegador] -->|WebSocket sobre TCP| Reader[Hilo lector]
+    Reader --> Input[queue.Queue de entrada]
+    Input --> Worker[queue-worker]
+    Worker --> History[SQLite: historial]
+    Worker --> Outgoing[Cola de salida del destinatario]
+    Outgoing --> Writer[Escritor exclusivo]
+    Writer --> Browser
+    Reader --> Sessions[ConnectionManager + Lock]
+    Reader --> Monitor[MonitorHub]
+    Monitor --> Admin[Cliente admin / panel React]
 ```
 
-El administrador se autentica con SQLite y recibe un snapshot, eventos y
-estadísticas. No aparece en `user_list`, no recibe mensajes de chat ni archivos
-y no participa en broadcasts. El monitor descarta eventos antiguos al llenarse
-su cola. El log contiene metadatos, nunca textos del chat ni contraseñas.
+### Flujo de una conexión
 
-Con C usuarios y A administradores autenticados, sin conexiones pendientes,
-los hilos esperados son **2 × (C + A) + 4**: lectores/escritores más principal,
-worker de mensajes, distribuidor del monitor y muestreador. Los handshakes o
-conexiones aún sin autenticar pueden aumentar temporalmente esa cifra.
+1. `tcp_server.py` acepta un socket TCP y crea el hilo de cliente.
+2. `websocket_handler.py` completa el handshake y procesa frames WebSocket.
+3. El hilo lector valida JSON, autenticación y archivos.
+4. `message_queue_manager.py` entrega el mensaje a un worker compartido.
+5. El worker guarda el mensaje en SQLite y resuelve sus destinatarios.
+6. Cada `Connection` usa una cola y un único hilo escritor para evitar frames
+   mezclados y aislar clientes lentos.
 
-Las contraseñas nuevas usan PBKDF2-SHA256 con 600 000 iteraciones y sal aleatoria.
-Las cuentas antiguas con SHA-256 siguen funcionando. La migración añade `role`
-sin perder datos; un registro web siempre crea un usuario normal. Un segundo
-login no reemplaza una sesión existente.
+El administrador se autentica con el rol `admin`, recibe el snapshot del
+monitor, eventos y estadísticas, pero no aparece en la lista de usuarios ni
+participa en el chat.
 
-## Ejecución local
+En régimen estable, con `C` usuarios y `A` administradores autenticados, se
+esperan aproximadamente `2 x (C + A) + 4` hilos: lector y escritor por
+conexión, hilo principal, worker de mensajes, distribuidor del monitor y
+muestreador de estadísticas. Las conexiones aún no autenticadas pueden elevar
+temporalmente la cifra.
 
-Desde la raíz del proyecto, con Python 3.11 o superior:
+## 3. Requisitos
+
+- Python 3.11 o superior.
+- Node.js y npm para la interfaz web.
+- Linux, macOS o Windows con soporte para sockets TCP.
+- `websockets` solo es necesario para los clientes y scripts de prueba.
+- `psutil` es opcional; el monitor tiene una alternativa basada en la biblioteca
+  estándar.
+
+## 4. Instalación y ejecución
+
+Desde la raíz del repositorio:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r scripts/requirements.txt
-export CHAT_ADMIN_PASSWORD='elige-una-clave-local'
+```
+
+En Windows:
+
+```powershell
+.venv\Scripts\activate
+```
+
+### Crear usuarios de prueba
+
+```bash
+export CHAT_ADMIN_PASSWORD='clave-admin-local'
 python scripts/seed_users.py --count 20
-python backend/main.py
 ```
 
-`websockets` se necesita para los clientes de `scripts/`, no para el servidor.
-El servidor funciona con la biblioteca estándar; `psutil` es opcional para
-estadísticas de CPU y RSS actual. Sin él utiliza `time.process_time()` y
-`resource.getrusage()` (RSS máximo).
+El seed crea `admin` y `user01` hasta `user20`. Las cuentas de usuario usan
+`test1234`; la cuenta admin usa `CHAT_ADMIN_PASSWORD`. Si no se define esa
+variable, el valor local de respaldo es `admin123`. Repetir el seed es seguro:
+no duplica usuarios ni cambia contraseñas o roles existentes.
 
-El seed crea `admin` y `user01`…`user20`. La contraseña de los usuarios de
-prueba es `test1234`; la de admin se toma de `CHAT_ADMIN_PASSWORD`, o `admin123`
-si no se define (solo pruebas locales). Repetir el seed no duplica ni cambia
-contraseñas o roles existentes. `--count` controla la cantidad de usuarios.
-
-| Configuración | Valor predeterminado | Alternativa |
-|---|---|---|
-| Host | `0.0.0.0` | `--host` o `CHAT_HOST` |
-| Puerto | `5000` | `--port` o `CHAT_PORT` |
-| SQLite | `backend/chat.db`, ruta absoluta | `CHAT_DB_PATH` |
-| Logs | `logs/server.log` desde la raíz | `CHAT_LOG_DIR` cambia el directorio |
-
-Los argumentos tienen prioridad sobre las variables de entorno. Ejemplos:
+### Iniciar el backend
 
 ```bash
+source .venv/bin/activate
 python backend/main.py --host 0.0.0.0 --port 5001
-CHAT_HOST=127.0.0.1 CHAT_PORT=5001 python backend/main.py
 ```
 
-Al arrancar se anuncia la IP LAN detectada y el puerto. `0.0.0.0` permite
-escuchar en las interfaces locales; para conectarse se utiliza la IP real del
-servidor, no `0.0.0.0`.
+Configuración disponible:
 
-## Cliente de consola y administrador
+| Opción | Predeterminado | Variable de entorno |
+| --- | --- | --- |
+| Host | `0.0.0.0` | `CHAT_HOST` |
+| Puerto | `5000` | `CHAT_PORT` |
+| Base SQLite | `backend/chat.db` | `CHAT_DB_PATH` |
+| Directorio de logs | `logs/` | `CHAT_LOG_DIR` |
 
-En otra terminal con el mismo entorno virtual:
+Los argumentos tienen prioridad. El servidor anuncia la IP LAN detectada. Para
+conectarse desde otro equipo se usa esa IP, nunca `0.0.0.0` ni `localhost`.
 
-```bash
-python scripts/cli_client.py --username user01
-python scripts/cli_client.py --username admin
-```
+### Iniciar el frontend
 
-La contraseña se solicita sin mostrarla. Comandos del usuario: `/w user02 Hola`,
-`/todos Hola a todos`, `/salir`. El administrador ve el JSON del snapshot,
-eventos y estadísticas automáticamente. La interfaz React del monitor se
-implementa por separado contra el contrato del backend.
-
-## Interfaz web
+En otra terminal:
 
 ```bash
 cd newfront/miapp
 npm install
-npm run dev
+npm run dev -- --host 0.0.0.0
 ```
 
-La interfaz actual conecta a `ws://localhost:5000` (o
-`ws://<hostname-del-navegador>:5000`) desde
-`newfront/miapp/src/services/socket.js`. Para forzar host/puerto crea
-`newfront/miapp/.env` con `VITE_WS_URL=ws://192.168.x.x:5000` y reinicia
-`npm run dev`. Credenciales de prueba tras el seed: `user01`…`user20` /
-`test1234`.
-
-## Pruebas desde otra computadora
-
-1. En la computadora servidor: sembrar usuarios, ejecutar
-   `python backend/main.py --host 0.0.0.0 --port 5000` y tomar la IP LAN anunciada.
-2. En la otra computadora: disponer del proyecto y de `websockets` mediante
-   `pip install -r scripts/requirements.txt`; ambas deben tener conectividad
-   entre sí y el puerto TCP elegido debe estar permitido por el firewall.
-3. Abrir usuarios reales con el cliente de consola o la interfaz configurada:
-   `python scripts/cli_client.py --host 192.168.1.10 --username user01`.
-4. Para carga, reservar `user01`…`user20` al script y usar cuentas diferentes
-   para las personas; los logins duplicados se rechazan.
+Vite mostrará la URL local y la URL de red. El cliente WebSocket usa el puerto
+`5001` por defecto en `src/services/socket.js`, para coincidir con la ejecución
+recomendada. Se puede cambiar sin modificar código:
 
 ```bash
-python scripts/cli_client.py --host 192.168.1.10 --username admin
-python scripts/load_test.py --host 192.168.1.10 --port 5000 --users 20 --duration 30 --rate 2 --file-mb 5 --output resultado.json
+VITE_WS_PORT=5000 npm run dev -- --host 0.0.0.0
 ```
 
-Reemplazar `192.168.1.10` por la IP real. Las claves y el tráfico son para una
-red de demostración: TLS no forma parte de esta fase.
+También se puede definir `VITE_WS_URL=ws://192.168.1.10:5001` en un archivo
+`.env` dentro de `newfront/miapp`.
 
-## Carga, RTT y evidencia
+## 5. Uso de la aplicación
 
-`load_test.py` mantiene R mensajes de carga y R sondas de retorno por segundo
-por usuario; uno de cada cinco mensajes de carga es broadcast. Las sondas son
-mensajes privados al propio usuario con marca de tiempo monotónica del mismo
-proceso cliente, por lo que no se sincronizan relojes entre computadoras.
-Cuando hay archivo, sus dos participantes se atienden en un bucle/hilo aparte
-del cliente de carga, para que su enmascarado no detenga las sondas de los demás.
-Esta separación corresponde al script; el servidor sigue usando threading.
+### Usuarios normales
 
-El script comprueba contenido, orden, remitentes, destinatarios, duplicados,
-pérdidas e integridad SHA-256 del archivo. Los enviados cuentan mensajes y los
-recibidos cuentan entregas, incluyendo cada destinatario de un broadcast.
-Reporta RTT p50/p95/máximo y compara los usuarios ajenos al archivo durante su
-transferencia y fuera de ella. La ventana va del inicio de envío al frame
-completo recibido; una sonda se incluye si su intervalo coincide con esa ventana.
-`null` y cero muestras indican que no hubo datos para estimar un percentil.
-El JSON identifica si el cliente usa la máscara Python o la extensión `speedups`.
-La corrida final utilizó la extensión C opcional de websockets 15.0.1; los
-primeros intentos usaron su alternativa Python. Los resultados documentan
-ambos entornos y el número de muestras, sin atribuir toda la mejora al servidor.
+Iniciar sesión con `user01` / `test1234` o registrar una cuenta nueva. La
+interfaz permite:
+
+- sala general y mensajes privados;
+- grupos creados desde el cliente;
+- transferencia de archivos de hasta 5 MiB;
+- perfiles con avatar y descripción;
+- notificaciones, no leídos y confirmaciones de lectura;
+- historial de mensajes recuperado desde SQLite al volver a iniciar sesión.
+
+Los mensajes privados y grupales se guardan aunque el destinatario esté
+desconectado. El historial conserva los últimos 500 mensajes visibles para cada
+usuario. Los archivos se guardan dentro del mensaje como base64, por lo que el
+tamaño de la base SQLite puede crecer rápidamente durante pruebas con archivos.
+
+### Administrador y monitor
+
+Iniciar sesión con `admin` y la contraseña configurada. El administrador ve:
+
+- usuarios conectados;
+- número de hilos y tamaño de la cola;
+- mensajes por segundo, bytes, CPU y memoria;
+- eventos de conexión, autenticación, mensajes, archivos y errores;
+- las últimas 200 entradas del buffer de logs.
+- pestaña de usuarios para crear, editar y eliminar cuentas;
+- pestaña de grupos para crear, editar integrantes y eliminar grupos.
+
+El monitor muestra metadatos y nunca registra contraseñas, textos privados ni
+contenido base64.
+
+Las operaciones administrativas se validan también en el backend. Una cuenta
+normal no puede invocarlas y un administrador no puede eliminar su propia
+cuenta.
+
+## 6. Cliente de consola
+
+```bash
+python scripts/cli_client.py --host 127.0.0.1 --port 5001 --username user01
+python scripts/cli_client.py --host 127.0.0.1 --port 5001 --username admin
+```
+
+La contraseña se solicita sin mostrarla. Comandos disponibles para usuarios:
+
+```text
+/w user02 Hola, este es un mensaje privado
+/todos Hola a todos
+/salir
+```
+
+El cliente admin muestra snapshots, eventos y estadísticas. Es útil para
+demostrar el backend aunque no se quiera abrir la interfaz React.
+
+## 7. Pruebas
+
+### Comprobaciones rápidas
+
+```bash
+python -m compileall -q backend scripts
+cd newfront/miapp
+npm run build
+```
+
+### Pruebas del backend y del protocolo
+
+```bash
+python scripts/test_database.py
+python scripts/test_concurrency.py
+python scripts/test_logging.py
+python scripts/test_monitor.py
+python scripts/test_regression.py
+```
+
+Las pruebas usan bases y logs temporales para no contaminar la instalación
+local.
+
+### Carga y rendimiento
 
 ```bash
 python scripts/test_network.py
@@ -172,39 +225,44 @@ python scripts/bench_threads_vs_processes.py
 python scripts/test_final.py
 ```
 
-Las pruebas automatizadas usan servidores y bases temporales y los eliminan
-al terminar. El microbenchmark crea procesos con `spawn` y compara N=10 y N=20
-una vez por configuración; no representa el chat completo. En Linux mide RSS
-actual; en macOS utiliza RSS máximo de `resource`.
+La prueba final documentada usa 20 usuarios, un administrador, 30 segundos,
+dos mensajes de carga y dos sondas RTT por usuario y segundo, además de un
+archivo de 5 MiB. La evidencia y sus limitaciones están en
+[`docs/RESULTADOS_FINALES.md`](docs/RESULTADOS_FINALES.md).
 
-- [Protocolo completo y monitor](docs/PROTOCOLO_MENSAJES.md).
-- [Validación integrada T2–T5](docs/VALIDACION_T2_T5.md).
-- [Hilos vs. procesos](docs/HILOS_VS_PROCESOS.md).
-- [Prueba final T10](docs/RESULTADOS_FINALES.md).
-- [Cambios para el reporte académico](docs/CAMBIOS_PARA_REPORTE.md).
+## 8. Persistencia y datos generados
 
-## Escalabilidad histórica anterior a T2
+- `backend/chat.db`: usuarios, perfiles e historial de mensajes.
+- `logs/server.log`: eventos técnicos del servidor.
+- `newfront/miapp/localStorage`: sesión, contactos, grupos, no leídos y
+  preferencias del navegador.
 
-Los siguientes resultados ya estaban documentados y no se repitieron en esta
-fase. Corresponden a un solo hilo por cliente y sin MonitorHub; su fórmula
-N+2 no describe el servidor actual con escritor dedicado.
+No se deben subir credenciales, bases de prueba ni logs con información real.
+Para una prueba aislada se puede usar `CHAT_DB_PATH` apuntando a otra base.
 
-| Clientes | Conexión total | Promedio primer broadcast | Mensajes recibidos | Errores | Hilos |
-|---|---:|---:|---:|---:|---:|
-| 1 | 0.796 ms | N/D | 0 | 0 | 3 estimados |
-| 5 | 2.148 ms | 24.812 ms | 20 | 0 | 7 estimados |
-| 10 | 3.803 ms | 9.732 ms | 90 | 0 | 12 medidos |
-| 25 | 8.177 ms | 6.461 ms | 600 | 0 | 27 medidos |
-| 50 | 14.936 ms | 33.331 ms | 2450 | 0 | 52 medidos |
+## 9. Documentación del repositorio
 
-## Archivos principales
+El orden recomendado de lectura está en [`docs/INDICE.md`](docs/INDICE.md).
+Los documentos principales son:
 
-- `backend/`: servidor TCP, WebSocket manual, gestión de clientes, colas,
-  SQLite, `server_log.py` y `monitor_hub.py`.
-- `scripts/`: seed, cliente CLI, carga, comparación hilos/procesos y pruebas.
-- `newfront/miapp/`: interfaz React.
-- `docs/`: contrato de mensajes, evidencias y guía del reporte.
+- [`docs/REQUISITOS_MAESTRO.md`](docs/REQUISITOS_MAESTRO.md): relación directa
+  con el enunciado y evidencia de cumplimiento.
+- [`docs/PROTOCOLO_MENSAJES.md`](docs/PROTOCOLO_MENSAJES.md): contrato JSON
+  entre frontend, cliente CLI y backend.
+- [`docs/RESULTADOS_FINALES.md`](docs/RESULTADOS_FINALES.md): prueba T10,
+  resultados y limitaciones.
+- [`docs/HILOS_VS_PROCESOS.md`](docs/HILOS_VS_PROCESOS.md): microbenchmark y
+  análisis de la elección de concurrencia.
+- [`docs/CAMBIOS_PARA_REPORTE.md`](docs/CAMBIOS_PARA_REPORTE.md): guía para
+  redactar el reporte académico.
+- [`docs/VALIDACION_T2_T5.md`](docs/VALIDACION_T2_T5.md): evidencia histórica
+  de la validación intermedia.
 
-El proyecto demuestra sockets TCP, hilos por conexión, sincronización con
-locks, colas, manejo de errores, autenticación, GUI y evaluación de rendimiento.
-Salas, historial persistente y TLS siguen fuera del alcance de esta fase.
+## 10. Alcance y limitaciones
+
+El proyecto demuestra los requisitos académicos solicitados. No pretende ser
+un servicio de producción: no incluye TLS, recuperación de contraseña,
+moderación, almacenamiento de archivos externo ni alta disponibilidad. El
+rendimiento documentado corresponde a las máquinas, versiones y condiciones
+indicadas en cada evidencia; no garantiza los mismos resultados en cualquier
+red o hardware.

@@ -20,7 +20,7 @@ El front dejó de usar el modo demo y habla con el servidor por WebSocket.
 - Pintar sala general, privados y lista online desde `user_list`
 - Enviar mensajes/archivos por el socket
 - Mostrar errores del servidor en la UI
-- Rechazar login web de `admin` (monitor queda en CLI)
+- Permitir login web de `admin` y mostrar el panel React de monitoreo
 
 ### Contrato
 Ver `docs/PROTOCOLO_MENSAJES.md` (tipos de mensaje de chat).
@@ -284,25 +284,27 @@ Sin cambio de protocolo; solo host/puerto de escucha.
 
 ---
 
-## 8. Lista de chats / contactos locales (sin historial)
+## 8. Lista de chats e historial persistente
 
 ### Decisión
-Por requisito de fase, **no** se persisten los mensajes en el servidor.
-Sí se guarda en el navegador la **lista de personas** con las que ya chateaste
-(y contactos/perfiles vistos), para que no desaparezcan al recargar.
+La lista de contactos, grupos y perfiles sigue guardándose en el navegador para
+conservar la organización local. Los mensajes ahora también se persisten en
+SQLite para que los destinatarios desconectados los recuperen al volver a
+iniciar sesión.
 
 ### Frontend
 - `localStorage` (`localChats`): `chatUsers`, `contacts`, luego también
   `customGroups`
 - Al login se restauran; al usar la app se van guardando
-- El historial de mensajes sigue siendo solo en memoria de la sesión actual
+- El historial recibido se carga después del login mediante el evento `history`
 
 Archivos front:
 - `newfront/miapp/src/utils/localChats.js`
 - `newfront/miapp/src/App.jsx`
 
 ### Backend
-Sin historial de chat en SQLite (solo usuarios / perfiles).
+SQLite guarda usuarios, perfiles e historial de mensajes. Se conservan los
+últimos 500 mensajes visibles por usuario.
 
 ---
 
@@ -317,4 +319,4 @@ Sin historial de chat en SQLite (solo usuarios / perfiles).
 | Nuevo mensaje / nuevo grupo | Menú +, directorio, grupos locales | `list_directory` / `directory`, `group_message` |
 | Archivos sala + grandes | `file` sin/`con` `to` | Broadcast sin `to` + reensamble WS |
 | Teléfono / PWA | Hostname + `VITE_WS_PORT`, viewport | Escucha en `5001` / LAN |
-| Chats locales sin historial | `localChats` en `localStorage` | Sin persistir mensajes |
+| Chats e historial | `localChats` y estado de mensajes en el front | `chat_messages` en SQLite + `history` al login |
