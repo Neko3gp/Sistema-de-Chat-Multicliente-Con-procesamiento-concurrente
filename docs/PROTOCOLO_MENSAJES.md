@@ -83,13 +83,28 @@ Si las credenciales no son válidas:
 { "type": "login_result", "ok": false, "reason": "invalid_credentials" }
 ```
 
+Si el usuario ya tiene una sesión conectada, se conserva la conexión original:
+
+```json
+{ "type": "error", "reason": "already_connected" }
+```
+
+Una conexión autenticada tampoco puede iniciar otra sesión sobre el mismo socket.
+La conexión rechazada permanece abierta y puede intentar otro usuario si aún no
+está autenticada.
+
 ### Errores
 ```json
 { "type": "error", "reason": "username_taken" }
 ```
 Valores posibles de `reason` (agregar más conforme se necesiten):
 `username_taken`, `invalid_credentials`, `user_not_found`,
-`authentication_required`, `invalid_message`, `message_too_large`, `file_too_large`.
+`authentication_required`, `invalid_message`, `message_too_large`, `file_too_large`,
+`already_connected`.
+
+Cada conexión tiene una cola de salida de hasta 1000 mensajes y un escritor
+exclusivo. Si la cola se llena, se cierra esa conexión y se actualiza `user_list`;
+no se garantiza entregar mensajes pendientes ni un error antes del cierre.
 
 ## Notas para el frontend
 

@@ -6,7 +6,8 @@ import base64
 import binascii
 import json
 
-from websocket_handler import do_handshake, recv_frame, send_frame
+from websocket_handler import do_handshake, recv_frame
+from connection_manager import Connection
 import database
 
 
@@ -15,7 +16,9 @@ HANDSHAKE_TIMEOUT = 10
 
 
 def handle_client(client_socket, address, connection_manager, message_queue):
+    """Autentica y recibe mensajes; delega los envíos al escritor exclusivo."""
     username = None
+    connection = None
     try:
         client_socket.settimeout(HANDSHAKE_TIMEOUT)
         try:
@@ -25,6 +28,7 @@ def handle_client(client_socket, address, connection_manager, message_queue):
             # Una cabecera malformada también debe cerrar la conexión.
             return
         client_socket.settimeout(None)
+        connection = Connection(client_socket, connection_manager, address)
 
         while True:
             raw = recv_frame(client_socket)
@@ -41,7 +45,7 @@ def handle_client(client_socket, address, connection_manager, message_queue):
             if msg_type == "register":
                 ok = database.create_user(message.get("username"), message.get("password"))
                 reason = None if ok else "username_taken"
-                _reply(client_socket, {"type": "register_result", "ok": ok, "reason": reason})
+                _reply(connection, {"type": "register_result", "ok": ok, "reason": reason})
                 continue
 
             if msg_type == "login":
@@ -52,12 +56,14 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     or not isinstance(password, str)
                     or not database.verify_user(login_username, password)
                 ):
-                    _reply(client_socket, {"type": "login_result", "ok": False,
+                    _reply(connection, {"type": "login_result", "ok": False,
                                            "reason": "invalid_credentials"})
                     continue
+                if username is not None or not connection_manager.add(login_username, connection):
+                    _reply(connection, {"type": "error", "reason": "already_connected"})
+                    continue
                 username = login_username
-                connection_manager.add(username, client_socket)
-                _reply(client_socket, {"type": "login_result", "ok": True, "reason": None})
+                _reply(connection, {"type": "login_result", "ok": True, "reason": None})
                 _broadcast_user_list(connection_manager)
                 continue
 
@@ -68,27 +74,27 @@ def handle_client(client_socket, address, connection_manager, message_queue):
     except (ConnectionResetError, OSError):
         pass
     finally:
-        if username:
-            connection_manager.remove(username)
-            _broadcast_user_list(connection_manager)
-        client_socket.close()
+        if connection is not None:
+            connection.close()
+            connection.wait_closed()
+        else:
+            client_socket.close()
 
 
 def process_message(item):
     """Corre en el hilo worker de la cola: decide a quién reenviar cada mensaje."""
     message = item["message"]
     cm = item["connection_manager"]
-    payload = json.dumps(message)
 
     msg_type = message.get("type")
 
     if msg_type == "broadcast":
-        cm.broadcast(lambda sock: send_frame(sock, payload), exclude=message.get("from"))
+        cm.broadcast(message, exclude=message.get("from"))
 
     elif msg_type == "private_message":
         target = cm.get(message.get("to"))
         if target:
-            send_frame(target, payload)
+            target.send(message)
         else:
             sender = cm.get(message.get("from"))
             if sender:
@@ -108,13 +114,14 @@ def process_message(item):
             return
         target = cm.get(message.get("to"))
         if target:
-            send_frame(target, payload)
+            target.send(message)
 
 
-def _reply(client_socket, message: dict):
-    send_frame(client_socket, json.dumps(message))
+def _reply(connection, message: dict):
+    """Encola una respuesta por el mismo canal que los mensajes reenviados."""
+    connection.send(message)
 
 
 def _broadcast_user_list(connection_manager):
-    payload = json.dumps({"type": "user_list", "users": connection_manager.all_usernames()})
-    connection_manager.broadcast(lambda sock: send_frame(sock, payload))
+    """Difunde la lista actual usando las colas individuales de salida."""
+    connection_manager.broadcast({"type": "user_list", "users": connection_manager.all_usernames()})
