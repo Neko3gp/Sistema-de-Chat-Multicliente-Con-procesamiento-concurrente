@@ -46,6 +46,9 @@ import {
 } from "./utils/messageStatus";
 import IncomingToast from "./components/IncomingToast";
 import {
+  unlockNotificationAudio,
+} from "./utils/notificationSound";
+import {
   clearSession,
   loadSession,
   refreshSession,
@@ -274,6 +277,22 @@ export default function App() {
     saveUnreadStore(username, unreadCounts, notifications, lastReadAt);
   }, [authenticated, username, unreadCounts, notifications, lastReadAt]);
 
+  // Desbloquea el audio con gestos del usuario (iOS/PWA lo exige).
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    function unlock() {
+      unlockNotificationAudio();
+    }
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("touchstart", unlock, { passive: true });
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("touchstart", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [authenticated]);
+
   useEffect(() => {
     const session = loadSession();
     if (!session) return undefined;
@@ -438,7 +457,7 @@ export default function App() {
       const kept = prev.filter((item) => !nextCounts[item.chatKey]);
       return [...notifItems, ...kept].slice(0, 40);
     });
-    if (newestToast) setIncomingToast(newestToast);
+    if (newestToast) showIncomingToast(newestToast);
   }
 
   function handleSelectUser(user) {
@@ -633,6 +652,10 @@ export default function App() {
     });
   }
 
+  function showIncomingToast(toast) {
+    setIncomingToast(toast);
+  }
+
   function notifyGroupAdded(group, text = "Se te agregó a este grupo") {
     upsertCustomGroup(group, { replaceMembers: true });
     const key = chatKey(null, group.id);
@@ -647,7 +670,7 @@ export default function App() {
     };
     setUnreadCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
     setNotifications((prev) => [notification, ...prev].slice(0, 40));
-    setIncomingToast({
+    showIncomingToast({
       id: notification.id,
       chatKey: key,
       from: "Administrador",
@@ -706,7 +729,7 @@ export default function App() {
         ...prev,
       ].slice(0, 40),
     );
-    setIncomingToast({
+    showIncomingToast({
       id: toastId,
       chatKey: key,
       from: message.from,
@@ -1289,7 +1312,7 @@ export default function App() {
         };
         setUnreadCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
         setNotifications((prev) => [notification, ...prev].slice(0, 40));
-        setIncomingToast({
+        showIncomingToast({
           id: notification.id,
           chatKey: key,
           from: "Administrador",

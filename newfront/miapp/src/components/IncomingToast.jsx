@@ -1,15 +1,21 @@
 import { useEffect, useRef } from "react";
 import { getInitials, getNameColor } from "../utils/avatar";
+import { playNotificationSound } from "../utils/notificationSound";
 
 const AUTO_HIDE_MS = 4800;
 
 export default function IncomingToast({ toast, onOpen, onDismiss }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  const lastSoundIdRef = useRef(null);
 
   useEffect(() => {
     if (!toast) return undefined;
     const id = toast.id;
+    if (lastSoundIdRef.current !== id) {
+      lastSoundIdRef.current = id;
+      playNotificationSound();
+    }
     const timer = window.setTimeout(() => {
       onDismissRef.current?.(id);
     }, AUTO_HIDE_MS);
