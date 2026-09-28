@@ -13,6 +13,19 @@ import database
 from server_log import configure_logging, logger
 
 
+def lan_ip():
+    """Consulta la ruta local sin enviar paquetes; usa hostname como respaldo."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))
+            return probe.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return "127.0.0.1"
+
+
 def start_server(host="0.0.0.0", port=5000):
     """Inicializa los servicios y acepta clientes con un hilo lector por socket."""
     configure_logging()
@@ -27,6 +40,7 @@ def start_server(host="0.0.0.0", port=5000):
     monitor = MonitorHub(connection_manager, message_queue)
     connection_manager.monitor_hub = monitor
     logger.info("Servidor escuchando en %s:%s", host, port)
+    logger.info("IP LAN detectada: %s; puerto: %s (acceso sujeto a host y firewall)", lan_ip(), port)
 
     try:
         while True:
