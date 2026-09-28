@@ -2,7 +2,7 @@ import { FiFile } from "react-icons/fi";
 import { getInitials, getNameColor } from "../utils/avatar";
 import { buildFileDataUrl, getFileKind } from "../utils/files";
 
-export default function FileMessage({ message, currentUser }) {
+export default function FileMessage({ message, currentUser, avatarUrl = "" }) {
   const mine = message.from === currentUser;
   const isGroup = !message.to;
   const author = message.from || "sistema";
@@ -17,13 +17,17 @@ export default function FileMessage({ message, currentUser }) {
   return (
     <div className={mine ? "bubble-row mine" : "bubble-row"}>
       {!mine ? (
-        <span
-          className="bubble-avatar"
-          style={{ background: authorColor }}
-          aria-hidden="true"
-        >
-          {getInitials(author)}
-        </span>
+        avatarUrl ? (
+          <img className="bubble-avatar photo" src={avatarUrl} alt="" />
+        ) : (
+          <span
+            className="bubble-avatar"
+            style={{ background: authorColor }}
+            aria-hidden="true"
+          >
+            {getInitials(author)}
+          </span>
+        )
       ) : null}
 
       <article className={mine ? "bubble mine file" : "bubble file"}>

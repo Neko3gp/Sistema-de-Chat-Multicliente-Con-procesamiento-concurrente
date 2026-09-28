@@ -8,6 +8,7 @@ import time
 
 from websocket_handler import send_frame
 from server_log import log_event
+import database
 
 
 class Connection:
@@ -111,7 +112,7 @@ class Connection:
         # dejan de contar esta sesión; evita mostrar desconexiones anticipadas.
         log_event("disconnect", self.username, reason=reason)
         if removed and self.role == "user":
-            self.manager.broadcast({"type": "user_list", "users": self.manager.all_usernames()})
+            self.manager.broadcast(self.manager.user_list_message())
 
     def wait_closed(self):
         """Espera al escritor sin intentar unir el hilo consigo mismo."""
@@ -157,6 +158,15 @@ class ConnectionManager:
         """Devuelve una copia de los usuarios de chat, excluyendo admins."""
         with self._lock:
             return list(self._clients)
+
+    def user_list_message(self):
+        """Arma user_list con nombres y perfiles públicos (avatar/descripción)."""
+        users = self.all_usernames()
+        return {
+            "type": "user_list",
+            "users": users,
+            "profiles": database.get_public_profiles(users),
+        }
 
     def broadcast(self, message, exclude=None):
         """Encola en cada destino sin esperar a que sus sockets puedan escribir."""

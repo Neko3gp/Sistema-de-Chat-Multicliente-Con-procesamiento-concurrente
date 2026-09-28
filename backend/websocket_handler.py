@@ -10,6 +10,8 @@ import time
 
 WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MASK_TABLES = tuple(bytes(value ^ key for value in range(256)) for key in range(256))
+# Archivos de hasta 5 MiB en base64 caben con holgura bajo este tope.
+MAX_MESSAGE_BYTES = 12 * 1024 * 1024
 
 
 def do_handshake(client_socket):
@@ -38,18 +40,31 @@ def do_handshake(client_socket):
     return True
 
 
-def recv_frame(client_socket):
-    """Lee un frame de texto WebSocket enviado por el cliente y devuelve el
-    string decodificado. Devuelve None si la conexión se cerró."""
+def _unmask(payload, mask_key):
+    """Aplica la máscara WebSocket por bloques para no retener el GIL demasiado."""
+    if not payload:
+        return payload
+    decoded = bytearray(payload)
+    for start in range(0, len(payload), 64 * 1024):
+        end = min(start + 64 * 1024, len(payload))
+        for offset, key in enumerate(mask_key):
+            decoded[start + offset:end:4] = payload[start + offset:end:4].translate(
+                MASK_TABLES[key]
+            )
+        if len(payload) > 64 * 1024:
+            time.sleep(0)
+    return decoded
+
+
+def _recv_one_frame(client_socket):
+    """Lee un único frame WebSocket. Devuelve (fin, opcode, payload) o None."""
     header = _recv_exact(client_socket, 2)
     if not header:
         return None
 
     b1, b2 = header
+    fin = bool(b1 & 0x80)
     opcode = b1 & 0x0F
-    if opcode == 0x8:  # frame de cierre
-        return None
-
     masked = b2 & 0x80
     payload_len = b2 & 0x7F
 
@@ -64,6 +79,9 @@ def recv_frame(client_socket):
             return None
         payload_len = struct.unpack(">Q", ext)[0]
 
+    if payload_len > MAX_MESSAGE_BYTES:
+        return None
+
     mask_key = _recv_exact(client_socket, 4) if masked else None
     if masked and mask_key is None:
         return None
@@ -72,22 +90,69 @@ def recv_frame(client_socket):
     if payload is None:
         return None
 
-    if masked and payload:
-        # La máscara se repite cada cuatro bytes. translate ejecuta el XOR
-        # tabulado en C y evita millones de iteraciones Python con el GIL.
-        # Procesar bloques limita cuánto tiempo retenemos el GIL por operación.
-        decoded = bytearray(payload)
-        for start in range(0, len(payload), 64 * 1024):
-            end = min(start + 64 * 1024, len(payload))
-            for offset, key in enumerate(mask_key):
-                decoded[start + offset:end:4] = payload[start + offset:end:4].translate(MASK_TABLES[key])
-            if len(payload) > 64 * 1024:
-                # Ceder explícitamente permite atender mensajes cortos entre
-                # bloques, incluso si este hilo vuelve a adquirir el GIL.
-                time.sleep(0)
-        payload = decoded
+    if masked:
+        payload = _unmask(payload, mask_key)
 
-    return payload.decode("utf-8") if payload else ""
+    return fin, opcode, payload
+
+
+def recv_frame(client_socket):
+    """Lee un mensaje de texto WebSocket completo (incluye fragmentos).
+
+    Los archivos grandes suelen llegar en varios frames; sin ensamblarlos el
+    JSON queda incompleto y se reporta invalid_json.
+    """
+    first = _recv_one_frame(client_socket)
+    if first is None:
+        return None
+
+    fin, opcode, payload = first
+
+    # Control frames: cierre, ping, pong.
+    if opcode == 0x8:
+        return None
+    if opcode in (0x9, 0xA):
+        if opcode == 0x9:
+            # Responder pong con el mismo payload.
+            _send_control(client_socket, 0xA, payload)
+        return recv_frame(client_socket)
+
+    if opcode != 0x1:
+        # Solo aceptamos texto JSON del chat.
+        return "" if fin else recv_frame(client_socket)
+
+    chunks = [payload]
+    total = len(payload)
+
+    while not fin:
+        nxt = _recv_one_frame(client_socket)
+        if nxt is None:
+            return None
+        fin, next_opcode, next_payload = nxt
+        if next_opcode in (0x8,):
+            return None
+        if next_opcode in (0x9, 0xA):
+            if next_opcode == 0x9:
+                _send_control(client_socket, 0xA, next_payload)
+            continue
+        if next_opcode != 0x0:
+            return None
+        total += len(next_payload)
+        if total > MAX_MESSAGE_BYTES:
+            return None
+        chunks.append(next_payload)
+
+    message = b"".join(chunks)
+    return message.decode("utf-8") if message else ""
+
+
+def _send_control(client_socket, opcode, payload=b""):
+    """Envía un frame de control sin máscara (servidor → cliente)."""
+    payload = payload or b""
+    if len(payload) > 125:
+        payload = payload[:125]
+    header = struct.pack("B", 0x80 | (opcode & 0x0F)) + struct.pack("B", len(payload))
+    client_socket.sendall(header + payload)
 
 
 def send_frame(client_socket, message: str):
@@ -111,7 +176,7 @@ def _recv_exact(sock, n):
     fragmentados en varias llamadas a recv)."""
     data = bytearray()
     while len(data) < n:
-        chunk = sock.recv(n - len(data))
+        chunk = sock.recv(min(n - len(data), 256 * 1024))
         if not chunk:
             return None
         # Extender evita copiar todo lo recibido ante cada fragmento TCP.

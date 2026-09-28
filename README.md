@@ -116,11 +116,12 @@ npm install
 npm run dev
 ```
 
-La interfaz actual conecta a `ws://localhost:5000` desde
-`newfront/miapp/src/services/socket.js`. Si se cambia el puerto o se ejecuta el
-navegador en otra computadora, quien desarrolla la interfaz debe configurar
-esa URL con el host/puerto del servidor. Esta fase modifica el backend y los
-scripts; no añade la pantalla administrativa de React.
+La interfaz actual conecta a `ws://localhost:5000` (o
+`ws://<hostname-del-navegador>:5000`) desde
+`newfront/miapp/src/services/socket.js`. Para forzar host/puerto crea
+`newfront/miapp/.env` con `VITE_WS_URL=ws://192.168.x.x:5000` y reinicia
+`npm run dev`. Credenciales de prueba tras el seed: `user01`…`user20` /
+`test1234`.
 
 ## Pruebas desde otra computadora
 

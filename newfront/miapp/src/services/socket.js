@@ -1,29 +1,54 @@
 let socket = null;
+let suppressCloseEvent = false;
 
-function getWsUrl() {
+export function getWsUrl() {
+  const fromEnv = import.meta.env.VITE_WS_URL;
+  if (typeof fromEnv === "string" && fromEnv.trim()) {
+    return fromEnv.trim();
+  }
+
   const host =
     typeof window !== "undefined" && window.location.hostname
       ? window.location.hostname
       : "localhost";
-  return `ws://${host}:5000`;
+  const port = String(import.meta.env.VITE_WS_PORT || "5001").trim() || "5001";
+  return `ws://${host}:${port}`;
 }
 
 function ensureSocket(onMessage) {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  const attach = (ws) => {
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        onMessage?.(message);
+      } catch {
+        onMessage?.({ type: "error", reason: "invalid_message" });
+      }
+    };
+    ws.onclose = () => {
+      if (suppressCloseEvent) {
+        suppressCloseEvent = false;
+        return;
+      }
+      if (socket === ws) socket = null;
+      onMessage?.({ type: "connection_closed" });
+    };
+    ws.onerror = () => {
+      onMessage?.({ type: "error", reason: "connection_failed" });
+    };
+  };
+
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
+    attach(socket);
     return socket;
   }
 
   socket = new WebSocket(getWsUrl());
-
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    onMessage?.(message);
-  };
-
-  socket.onclose = () => {
-    console.log("Conexión cerrada");
-  };
-
+  attach(socket);
   return socket;
 }
 
@@ -37,7 +62,11 @@ function sendWhenOpen(payload) {
 
   socket.addEventListener(
     "open",
-    () => socket.send(JSON.stringify(payload)),
+    () => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(payload));
+      }
+    },
     { once: true },
   );
 }
@@ -68,7 +97,29 @@ export function sendFile(to, filename, data) {
   socket?.send(JSON.stringify(payload));
 }
 
-export function disconnectSocket() {
-  socket?.close();
+export function sendUpdateProfile({ avatarUrl = "", description = "" } = {}) {
+  socket?.send(
+    JSON.stringify({
+      type: "update_profile",
+      avatarUrl,
+      description,
+    }),
+  );
+}
+
+export function disconnectSocket({ silent = false } = {}) {
+  if (!socket) return;
+  if (silent) suppressCloseEvent = true;
+  socket.onmessage = null;
+  socket.onerror = null;
+  const current = socket;
   socket = null;
+  if (!silent) {
+    current.onclose = null;
+  }
+  try {
+    current.close();
+  } catch {
+    suppressCloseEvent = false;
+  }
 }

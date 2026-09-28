@@ -26,6 +26,15 @@ function KindIcon({ kind, size = 16 }) {
   return <FiFile size={size} aria-hidden="true" />;
 }
 
+function shortenFileName(name, max = 28) {
+  if (!name || name.length <= max) return name;
+  const extMatch = name.match(/(\.[^./\\]+)$/);
+  const ext = extMatch ? extMatch[1] : "";
+  const base = ext ? name.slice(0, -ext.length) : name;
+  const keep = Math.max(8, max - ext.length - 1);
+  return `${base.slice(0, keep)}…${ext}`;
+}
+
 export default function MessageInput({ selectedUser, onSend, onSendFile }) {
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
@@ -49,7 +58,9 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
         setError(
           err?.message === "file_too_large"
             ? "El archivo supera 5 MiB"
-            : "No se pudo enviar el archivo",
+            : err?.message === "user_not_found"
+              ? "Ese usuario no está conectado"
+              : "No se pudo enviar el archivo",
         );
       } finally {
         setSending(false);
@@ -95,6 +106,7 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
   function chooseType(type) {
     setSelectedType(type);
     setError("");
+    setPickerOpen(false);
     setTimeout(() => fileRef.current?.click(), 0);
   }
 
@@ -111,71 +123,75 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
         onChange={handleFileChange}
       />
 
-      <div className="attach-wrap">
-        <button
-          type="button"
-          className="attach-btn"
-          title="Adjuntar archivo"
-          aria-label="Adjuntar archivo"
-          aria-expanded={pickerOpen}
-          onClick={() => setPickerOpen((open) => !open)}
-          disabled={sending}
-        >
-          <FiPaperclip size={18} aria-hidden="true" />
-        </button>
+      {pickerOpen ? (
+        <div className="file-type-menu" role="menu">
+          {Object.entries(FILE_TYPES).map(([type, config]) => {
+            const Icon = config.Icon;
+            return (
+              <button
+                key={type}
+                type="button"
+                role="menuitem"
+                className={selectedType === type ? "active" : ""}
+                onClick={() => chooseType(type)}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {config.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
-        {pickerOpen ? (
-          <div className="file-type-menu" role="menu">
-            {Object.entries(FILE_TYPES).map(([type, config]) => {
-              const Icon = config.Icon;
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  role="menuitem"
-                  className={selectedType === type ? "active" : ""}
-                  onClick={() => chooseType(type)}
-                >
-                  <Icon size={18} aria-hidden="true" />
-                  {config.label}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="message-input-main">
-        {pendingFile ? (
-          <div className="pending-file">
-            <span className="pending-file-label">
-              <KindIcon kind={kind} />
-              {pendingFile.name}
-            </span>
-            <button type="button" onClick={clearFile} aria-label="Quitar archivo">
-              <FiX size={16} aria-hidden="true" />
-            </button>
-          </div>
-        ) : (
-          <input
-            type="text"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder={
-              selectedUser
-                ? `Mensaje privado a ${selectedUser}...`
-                : "Mensaje para todos..."
-            }
+      <div className="message-input-row">
+        <div className="attach-wrap">
+          <button
+            type="button"
+            className="attach-btn"
+            title="Adjuntar archivo"
+            aria-label="Adjuntar archivo"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((open) => !open)}
             disabled={sending}
-            onFocus={() => setPickerOpen(false)}
-          />
-        )}
-        {error ? <p className="input-error">{error}</p> : null}
-      </div>
+          >
+            <FiPaperclip size={18} aria-hidden="true" />
+          </button>
+        </div>
 
-      <button type="submit" disabled={sending || (!text.trim() && !pendingFile)}>
-        {sending ? "..." : "Enviar"}
-      </button>
+        <div className="message-input-main">
+          {pendingFile ? (
+            <div className="pending-file">
+              <span className="pending-file-label">
+                <KindIcon kind={kind} />
+                <span className="pending-file-name" title={pendingFile.name}>
+                  {shortenFileName(pendingFile.name)}
+                </span>
+              </span>
+              <button type="button" onClick={clearFile} aria-label="Quitar archivo">
+                <FiX size={16} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder={
+                selectedUser
+                  ? `Mensaje privado a ${selectedUser}...`
+                  : "Mensaje para todos..."
+              }
+              disabled={sending}
+              onFocus={() => setPickerOpen(false)}
+            />
+          )}
+          {error ? <p className="input-error">{error}</p> : null}
+        </div>
+
+        <button type="submit" disabled={sending || (!text.trim() && !pendingFile)}>
+          {sending ? "..." : "Enviar"}
+        </button>
+      </div>
     </form>
   );
 }

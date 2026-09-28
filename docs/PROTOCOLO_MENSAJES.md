@@ -50,6 +50,10 @@ es idempotente para un admin ya suscrito. Una conexión sin rol `admin` recibe
 }
 ```
 
+Si se omite `to` (o va vacío), el archivo se difunde a la sala general como un
+broadcast. Con `to`, solo llega a ese usuario conectado; si no está en línea se
+responde `user_not_found`.
+
 El archivo decodificado puede pesar como máximo **5 MiB (5 242 880 bytes)**.
 Si supera ese límite, se responde `{"type":"error","reason":"file_too_large"}`
 sin reenviar el archivo. Si `data` falta o no contiene base64 válido, se responde
@@ -69,8 +73,44 @@ El servidor agrega el campo `from` a los mensajes que reenvía:
 
 ### Lista de usuarios conectados
 ```json
-{ "type": "user_list", "users": ["Usuario1", "Usuario2", "Usuario3"] }
+{
+  "type": "user_list",
+  "users": ["Usuario1", "Usuario2", "Usuario3"],
+  "profiles": {
+    "Usuario1": { "avatarUrl": "https://ejemplo.com/a.jpg", "description": "Hola" },
+    "Usuario2": { "avatarUrl": "", "description": "" }
+  }
+}
 ```
+
+`users` sigue siendo la lista de nombres (compatible con clientes antiguos).
+`profiles` aporta avatar y descripción públicos de cada conectado. El correo
+no se comparte.
+
+### Actualizar perfil público
+```json
+{
+  "type": "update_profile",
+  "avatarUrl": "https://ejemplo.com/foto.jpg",
+  "description": "Hey ahí estoy usando Chat"
+}
+```
+
+`avatarUrl` vacío quita la foto. Debe ser `http://` o `https://` (máx. 2048
+caracteres). `description` admite hasta 140 caracteres. Respuesta:
+
+```json
+{
+  "type": "profile_result",
+  "ok": true,
+  "reason": null,
+  "avatarUrl": "https://ejemplo.com/foto.jpg",
+  "description": "Hey ahí estoy usando Chat"
+}
+```
+
+Tras un cambio válido el servidor vuelve a emitir `user_list` con `profiles`
+actualizados.
 
 ### Resultado de registro
 ```json
@@ -85,11 +125,19 @@ Si el usuario ya existe:
 
 ### Resultado de login
 ```json
-{ "type": "login_result", "ok": true, "reason": null, "role": "user" }
+{
+  "type": "login_result",
+  "ok": true,
+  "reason": null,
+  "role": "user",
+  "avatarUrl": "",
+  "description": ""
+}
 ```
 
 El login correcto incluye `role`, con valor `user` o `admin` según la cuenta
-almacenada en SQLite. El registro web crea cuentas `user`; enviar un campo
+almacenada en SQLite, más el perfil público guardado (`avatarUrl`,
+`description`). El registro web crea cuentas `user`; enviar un campo
 `role` desde el cliente no permite elegir privilegios. `reason` conserva su
 valor `null` en respuestas exitosas. El administrador recibe su `login_result`
 antes del snapshot; no aparece en `user_list`, no recibe mensajes de chat ni

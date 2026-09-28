@@ -40,6 +40,7 @@ export default function Home({
   onOpenSettings,
   onStartNewChat,
   chatUsers,
+  contacts = {},
   onLogout,
 }) {
   const [chatOpen, setChatOpen] = useState(false);
@@ -49,6 +50,9 @@ export default function Home({
   const layoutClass = chatOpen ? "home-layout chat-open" : "home-layout list-open";
   const contactOnline = selectedUser ? users.includes(selectedUser) : false;
   const memberCount = users.length;
+  const headerAvatarUrl = selectedUser
+    ? contacts[selectedUser]?.avatarUrl || ""
+    : groupAvatarUrl;
 
   function handleSelectChat(user) {
     onSelectUser(user);
@@ -84,6 +88,7 @@ export default function Home({
         avatarUrl={avatarUrl}
         users={users}
         chatUsers={chatUsers}
+        contacts={contacts}
         messages={messages}
         selectedUser={selectedUser}
         groupName={groupName}
@@ -120,7 +125,9 @@ export default function Home({
             ←
           </button>
 
-          {selectedUser || !groupAvatarUrl ? (
+          {headerAvatarUrl ? (
+            <img className="header-avatar photo" src={headerAvatarUrl} alt="" />
+          ) : (
             <span
               className="header-avatar"
               style={{ background: getNameColor(title) }}
@@ -128,8 +135,6 @@ export default function Home({
             >
               {getInitials(title)}
             </span>
-          ) : (
-            <img className="header-avatar photo" src={groupAvatarUrl} alt="" />
           )}
 
           <div className="header-info">
@@ -154,12 +159,14 @@ export default function Home({
                   key={index}
                   message={message}
                   currentUser={username}
+                  avatarUrl={contacts[message.from]?.avatarUrl || ""}
                 />
               ) : (
                 <Message
                   key={index}
                   message={message}
                   currentUser={username}
+                  avatarUrl={contacts[message.from]?.avatarUrl || ""}
                 />
               ),
             )

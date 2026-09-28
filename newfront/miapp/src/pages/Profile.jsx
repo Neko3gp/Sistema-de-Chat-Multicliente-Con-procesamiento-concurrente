@@ -59,9 +59,19 @@ export default function Profile({
   }
 
   function applyPhotoUrl() {
-    setAvatarUrl(urlDraft.trim());
+    const nextUrl = urlDraft.trim();
+    setAvatarUrl(nextUrl);
     setEditingPhoto(false);
     setPhotoMenuOpen(false);
+    onSave({
+      username: username.trim() || profile.username,
+      email: email.trim(),
+      password,
+      description: description.trim(),
+      avatarUrl: nextUrl,
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
   }
 
   function removePhoto() {
@@ -69,6 +79,15 @@ export default function Profile({
     setUrlDraft("");
     setEditingPhoto(false);
     setPhotoMenuOpen(false);
+    onSave({
+      username: username.trim() || profile.username,
+      email: email.trim(),
+      password,
+      description: description.trim(),
+      avatarUrl: "",
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
   }
 
   function openChangePhoto() {
@@ -142,6 +161,7 @@ export default function Profile({
                 value={urlDraft}
                 onChange={(event) => setUrlDraft(event.target.value)}
               />
+              <small>Debe ser http(s); la verán todos los usuarios</small>
             </label>
             <div className="profile-url-actions">
               <button type="button" onClick={applyPhotoUrl}>
@@ -165,11 +185,9 @@ export default function Profile({
         <p className={isOnline ? "profile-status online" : "profile-status"}>
           {isOwn ? displayEmail || "Sin correo" : statusText}
         </p>
-        {isOwn ? (
-          <p className="profile-display-description">
-            {displayDescription || "Sin descripción"}
-          </p>
-        ) : null}
+        <p className="profile-display-description">
+          {displayDescription || "Sin descripción"}
+        </p>
       </section>
 
       {!isOwn ? (
@@ -192,18 +210,18 @@ export default function Profile({
           <form className="profile-form" onSubmit={handleSave}>
             <label>
               <span>Nombre de usuario</span>
-              <small>Este nombre aparece en tus chats</small>
+              <small>Lo define tu cuenta en el servidor</small>
               <input
                 type="text"
                 value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                required
+                readOnly
+                disabled
               />
             </label>
 
             <label>
               <span>Descripción</span>
-              <small>Info visible en tu perfil, como en WhatsApp</small>
+              <small>Visible para todos los usuarios conectados</small>
               <textarea
                 rows={3}
                 value={description}
@@ -215,7 +233,7 @@ export default function Profile({
 
             <label>
               <span>Correo</span>
-              <small>No visible para otros usuarios</small>
+              <small>Se guarda en este dispositivo</small>
               <input
                 type="email"
                 value={email}
@@ -226,11 +244,12 @@ export default function Profile({
 
             <label>
               <span>Contraseña</span>
-              <small>Solo tú puedes verla aquí</small>
+              <small>Cámbiala solo desde el servidor; aquí no se modifica</small>
               <input
                 type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                value={password ? "••••••••" : ""}
+                disabled
+                readOnly
                 placeholder="••••••••"
               />
             </label>

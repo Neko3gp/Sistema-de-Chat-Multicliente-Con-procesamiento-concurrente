@@ -48,6 +48,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 message = json.loads(raw)
             except json.JSONDecodeError:
                 log_event("error", username, level=logging.WARNING, reason="invalid_json")
+                if username is not None and connection is not None:
+                    _reply(connection, {"type": "error", "reason": "invalid_message"})
                 continue
 
             if not isinstance(message, dict):
@@ -84,8 +86,15 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 username = login_username
                 threading.current_thread().name = f"client-{username}"
                 log_event("connect", username, phase="login", result="ok")
-                _reply(connection, {"type": "login_result", "ok": True, "reason": None,
-                                    "role": role})
+                profile = database.get_public_profile(username)
+                _reply(connection, {
+                    "type": "login_result",
+                    "ok": True,
+                    "reason": None,
+                    "role": role,
+                    "avatarUrl": profile.get("avatarUrl", ""),
+                    "description": profile.get("description", ""),
+                })
                 if role == "admin":
                     connection_manager.monitor_hub.subscribe(connection)
                 else:
@@ -106,6 +115,26 @@ def handle_client(client_socket, address, connection_manager, message_queue):
             if connection.role == "admin":
                 _reply(connection, {"type": "error", "reason": "forbidden"})
                 continue
+
+            if msg_type == "update_profile":
+                updated = database.update_user_profile(
+                    username,
+                    message.get("avatarUrl", ""),
+                    message.get("description", ""),
+                )
+                if updated is None:
+                    _reply(connection, {"type": "error", "reason": "invalid_message"})
+                    continue
+                _reply(connection, {
+                    "type": "profile_result",
+                    "ok": True,
+                    "reason": None,
+                    "avatarUrl": updated["avatarUrl"],
+                    "description": updated["description"],
+                })
+                _broadcast_user_list(connection_manager)
+                continue
+
             if msg_type not in {"broadcast", "private_message", "file"}:
                 _reply(connection, {"type": "error", "reason": "invalid_message"})
                 continue
@@ -171,10 +200,25 @@ def process_message(item):
                 _reply(sender, {"type": "error", "reason": "user_not_found"})
 
     elif msg_type == "file":
-        # El lector ya validó el archivo; este worker solo resuelve el destino.
-        target = cm.get(message.get("to"))
-        if target:
-            target.send(message)
+        # Sin "to": archivo de sala general (broadcast). Con "to": privado.
+        destination = message.get("to")
+        if not destination:
+            count = cm.broadcast(message, exclude=message.get("from"))
+            log_event(
+                "file",
+                message.get("from"),
+                to=None,
+                filename=message.get("filename"),
+                recipients=count,
+            )
+        else:
+            target = cm.get(destination)
+            if target:
+                target.send(message)
+            else:
+                sender = cm.get(message.get("from"))
+                if sender:
+                    _reply(sender, {"type": "error", "reason": "user_not_found"})
 
 
 def _reply(connection, message: dict):
@@ -186,4 +230,4 @@ def _reply(connection, message: dict):
 
 def _broadcast_user_list(connection_manager):
     """Difunde la lista actual usando las colas individuales de salida."""
-    connection_manager.broadcast({"type": "user_list", "users": connection_manager.all_usernames()})
+    connection_manager.broadcast(connection_manager.user_list_message())

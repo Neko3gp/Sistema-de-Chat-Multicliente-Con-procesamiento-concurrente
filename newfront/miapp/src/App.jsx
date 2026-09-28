@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
@@ -11,14 +11,19 @@ import {
   sendBroadcast,
   sendPrivateMessage,
   sendFile,
+  sendUpdateProfile,
   disconnectSocket,
 } from "./services/socket";
-import {
-  initialDemoState,
-  contactProfiles as mockContactProfiles,
-  groups as mockGroups,
-} from "./data/conversations";
+import { groups as mockGroups } from "./data/conversations";
 import { fileToBase64 } from "./utils/files";
+import { loadLocalChats, saveLocalChats } from "./utils/localChats";
+import { loadLocalProfile, saveLocalProfile } from "./utils/localProfile";
+import {
+  clearSession,
+  loadSession,
+  refreshSession,
+  saveSession,
+} from "./utils/session";
 import {
   applyTheme,
   followsSystem,
@@ -28,56 +33,49 @@ import {
 } from "./utils/theme";
 import "./App.css";
 
-const SKIP_AUTH = true;
-const DEMO_ACCOUNTS_KEY = "chat-demo-accounts";
+const EMPTY_GROUPS = {
+  general: {
+    ...mockGroups.general,
+    admin: "",
+    members: [],
+  },
+};
 
-function loadDemoAccounts() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DEMO_ACCOUNTS_KEY) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
+function mapServerReason(reason) {
+  switch (reason) {
+    case "invalid_credentials":
+      return "Usuario o contraseña incorrectos";
+    case "username_taken":
+      return "Ese nombre de usuario ya está en uso";
+    case "already_connected":
+      return "Ese usuario ya tiene una sesión abierta";
+    case "user_not_found":
+      return "El destinatario no está conectado";
+    case "authentication_required":
+      return "Debes iniciar sesión";
+    case "file_too_large":
+      return "El archivo supera el límite de 5 MiB";
+    case "forbidden":
+      return "No tienes permiso para esa acción";
+    case "invalid_message":
+      return "Mensaje inválido";
+    case "connection_failed":
+      return "No se pudo conectar al servidor";
+    case "connection_closed":
+      return "Se cerró la conexión con el servidor";
+    default:
+      return reason || "Error del servidor";
   }
 }
 
-function saveDemoAccounts(accounts) {
-  localStorage.setItem(DEMO_ACCOUNTS_KEY, JSON.stringify(accounts));
-}
-
-function resolveDemoAccount(identifier) {
-  const q = identifier.trim().toLowerCase();
-  if (!q) return null;
-
-  if (
-    q === initialDemoState.username.toLowerCase() ||
-    q === initialDemoState.email.toLowerCase()
-  ) {
-    return {
-      username: initialDemoState.username,
-      email: initialDemoState.email,
-      password: initialDemoState.password,
-      description: initialDemoState.description,
-      avatarUrl: initialDemoState.avatarUrl,
-    };
-  }
-
-  const accounts = loadDemoAccounts();
-  for (const [username, account] of Object.entries(accounts)) {
-    if (
-      username.toLowerCase() === q ||
-      account.email?.toLowerCase() === q
-    ) {
-      return {
-        username,
-        email: account.email || "",
-        password: account.password || "",
-        description: account.description || "",
-        avatarUrl: account.avatarUrl || "",
-      };
-    }
-  }
-
-  return null;
+function stubContact(name) {
+  return {
+    username: name,
+    email: "",
+    description: "",
+    avatarUrl: "",
+    lastSeen: new Date(),
+  };
 }
 
 export default function App() {
@@ -97,21 +95,93 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [viewedContact, setViewedContact] = useState(null);
-  const [groupsData, setGroupsData] = useState(mockGroups);
-  const [contacts, setContacts] = useState(mockContactProfiles);
-  const [chatUsers, setChatUsers] = useState(() =>
-    Object.keys(mockContactProfiles),
-  );
+  const [groupsData, setGroupsData] = useState(EMPTY_GROUPS);
+  const [contacts, setContacts] = useState({});
+  const [chatUsers, setChatUsers] = useState([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+
+  const usernameRef = useRef("");
+  const passwordRef = useRef("");
+  const authenticatedRef = useRef(false);
+  const reconnectTimerRef = useRef(null);
+  const intentionalCloseRef = useRef(false);
+  const messageHandlerRef = useRef(null);
 
   const generalGroup = groupsData.general;
 
   const inApp =
-    view === "home" ||
-    view === "settings" ||
-    view === "profile" ||
-    view === "group";
+    authenticated &&
+    (view === "home" ||
+      view === "settings" ||
+      view === "profile" ||
+      view === "group");
+
+  useEffect(() => {
+    usernameRef.current = username;
+  }, [username]);
+
+  useEffect(() => {
+    passwordRef.current = password;
+  }, [password]);
+
+  useEffect(() => {
+    authenticatedRef.current = authenticated;
+  }, [authenticated]);
+
+  function dispatchServerMessage(message) {
+    messageHandlerRef.current?.(message);
+  }
+
+  function clearReconnectTimer() {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }
+
+  function scheduleReconnect(delayMs = 900) {
+    clearReconnectTimer();
+    setReconnecting(true);
+    setError("Reconectando…");
+    reconnectTimerRef.current = setTimeout(() => {
+      const session = loadSession();
+      if (!session) {
+        setReconnecting(false);
+        resetSession("La sesión expiró. Vuelve a iniciar sesión.");
+        return;
+      }
+      intentionalCloseRef.current = false;
+      setUsername(session.username);
+      usernameRef.current = session.username;
+      setPassword(session.password);
+      passwordRef.current = session.password;
+      disconnectSocket({ silent: true });
+      connectSocket(session.username, session.password, dispatchServerMessage);
+    }, delayMs);
+  }
+
+  useEffect(() => {
+    if (!authenticated || !username) return;
+    saveLocalChats(username, { chatUsers, contacts });
+  }, [authenticated, username, chatUsers, contacts]);
+
+  useEffect(() => {
+    const session = loadSession();
+    if (!session) return undefined;
+
+    setUsername(session.username);
+    usernameRef.current = session.username;
+    setPassword(session.password);
+    passwordRef.current = session.password;
+    connectSocket(session.username, session.password, dispatchServerMessage);
+
+    return () => {
+      clearReconnectTimer();
+    };
+  }, []);
 
   function openOwnProfile(from = "home") {
     setViewedContact(null);
@@ -156,7 +226,15 @@ export default function App() {
         return name;
       }
     }
-    return null;
+
+    const onlineMatch = users.find((name) => name.toLowerCase() === q);
+    return onlineMatch || null;
+  }
+
+  function ensureContact(name) {
+    setContacts((prev) =>
+      prev[name] ? prev : { ...prev, [name]: stubContact(name) },
+    );
   }
 
   function handleStartNewChat(query) {
@@ -164,7 +242,7 @@ export default function App() {
     const q = raw.toLowerCase();
 
     if (!q) {
-      return { error: "Escribe un nombre de usuario o correo" };
+      return { error: "Escribe un nombre de usuario" };
     }
 
     if (q === username.toLowerCase() || q === email.toLowerCase()) {
@@ -174,26 +252,8 @@ export default function App() {
     let contactName = findContactByQuery(raw);
 
     if (!contactName) {
-      const isEmail = raw.includes("@");
-      contactName = isEmail
-        ? raw.split("@")[0].replace(/[^\w.-]/g, "") || "Usuario"
-        : raw;
-
-      const existing = findContactByQuery(contactName);
-      if (existing) {
-        contactName = existing;
-      } else {
-        setContacts((prev) => ({
-          ...prev,
-          [contactName]: {
-            username: contactName,
-            email: isEmail ? raw : `${contactName.toLowerCase()}@chat.com`,
-            description: "",
-            avatarUrl: "",
-            lastSeen: new Date(Date.now() - 1000 * 60 * 30),
-          },
-        }));
-      }
+      contactName = raw;
+      ensureContact(contactName);
     }
 
     setChatUsers((prev) =>
@@ -205,13 +265,7 @@ export default function App() {
 
   function openContactProfile(contactName, from = "home") {
     if (!contactName) return;
-    const base = contacts[contactName] || {
-      username: contactName,
-      email: `${contactName.toLowerCase()}@chat.com`,
-      description: "",
-      avatarUrl: "",
-      lastSeen: new Date(Date.now() - 1000 * 60 * 20),
-    };
+    const base = contacts[contactName] || stubContact(contactName);
     if (from !== "group") {
       setViewedGroup(null);
     }
@@ -254,164 +308,288 @@ export default function App() {
     setView("home");
   }
 
+  function resetSession(keepAuthError = "") {
+    clearReconnectTimer();
+    setReconnecting(false);
+    clearSession();
+    setAuthenticated(false);
+    setView("login");
+    setUsername("");
+    usernameRef.current = "";
+    setEmail("");
+    setPassword("");
+    passwordRef.current = "";
+    setDescription("");
+    setAvatarUrl("");
+    setUsers([]);
+    setMessages([]);
+    setSelectedUser(null);
+    setViewedContact(null);
+    setViewedGroup(null);
+    setGroupsData(EMPTY_GROUPS);
+    setContacts({});
+    setChatUsers([]);
+    setSuccess("");
+    setError(keepAuthError);
+  }
+
   function handleServerMessage(message) {
     switch (message.type) {
       case "login_result":
         if (message.ok) {
+          if (message.role === "admin") {
+            intentionalCloseRef.current = true;
+            disconnectSocket({ silent: true });
+            clearSession();
+            setError(
+              "La cuenta admin es solo para el monitor (usa el cliente de consola).",
+            );
+            setAuthenticated(false);
+            setReconnecting(false);
+            setView("login");
+            return;
+          }
+
+          const wasAuthenticated = authenticatedRef.current;
+          const local = loadLocalProfile(usernameRef.current) || {};
+          const nextDescription =
+            typeof message.description === "string"
+              ? message.description
+              : local.description || "";
+          const nextAvatar =
+            typeof message.avatarUrl === "string"
+              ? message.avatarUrl
+              : local.avatarUrl || "";
+
+          saveSession({
+            username: usernameRef.current,
+            password: passwordRef.current,
+          });
+          setEmail(local.email || "");
+          setDescription(nextDescription);
+          setAvatarUrl(nextAvatar);
+          saveLocalProfile(usernameRef.current, {
+            email: local.email || "",
+            description: nextDescription,
+            avatarUrl: nextAvatar,
+          });
           setError("");
+          setSuccess("");
+          setReconnecting(false);
+          setAuthenticated(true);
           setView("home");
+
+          if (!wasAuthenticated) {
+            const saved = loadLocalChats(usernameRef.current);
+            setMessages([]);
+            setUsers([]);
+            setChatUsers(saved.chatUsers);
+            setContacts(saved.contacts);
+            setGroupsData({
+              general: {
+                ...EMPTY_GROUPS.general,
+                admin: usernameRef.current,
+                members: [],
+              },
+            });
+          }
         } else {
-          setError(message.reason || "No se pudo iniciar sesión");
+          setReconnecting(false);
+          clearSession();
+          setError(mapServerReason(message.reason || "invalid_credentials"));
+          setAuthenticated(false);
+          setView("login");
         }
         break;
       case "register_result":
         if (message.ok) {
           setError("");
           setSuccess("Cuenta creada. Ahora inicia sesión.");
+          if (usernameRef.current) {
+            saveLocalProfile(usernameRef.current, {
+              email,
+              description: "",
+              avatarUrl: "",
+            });
+          }
           setView("login");
         } else {
-          setError(message.reason || "No se pudo registrar");
+          setError(mapServerReason(message.reason || "username_taken"));
         }
         break;
-      case "user_list":
-        setUsers(message.users || []);
+      case "profile_result":
+        if (message.ok) {
+          const nextDescription = message.description || "";
+          const nextAvatar = message.avatarUrl || "";
+          setDescription(nextDescription);
+          setAvatarUrl(nextAvatar);
+          saveLocalProfile(usernameRef.current, {
+            email,
+            description: nextDescription,
+            avatarUrl: nextAvatar,
+          });
+          refreshSession();
+        }
         break;
+      case "user_list": {
+        const nextUsers = (message.users || []).filter(Boolean);
+        const profiles =
+          message.profiles && typeof message.profiles === "object"
+            ? message.profiles
+            : {};
+        setUsers(nextUsers);
+        setGroupsData((prev) => ({
+          ...prev,
+          general: {
+            ...prev.general,
+            members: nextUsers,
+          },
+        }));
+        setContacts((prev) => {
+          const next = { ...prev };
+          for (const name of nextUsers) {
+            const remote = profiles[name] || {};
+            const base = next[name] || stubContact(name);
+            next[name] = {
+              ...base,
+              username: name,
+              avatarUrl:
+                typeof remote.avatarUrl === "string"
+                  ? remote.avatarUrl
+                  : base.avatarUrl || "",
+              description:
+                typeof remote.description === "string"
+                  ? remote.description
+                  : base.description || "",
+            };
+          }
+          return next;
+        });
+        setChatUsers((prev) => {
+          const merged = new Set(prev);
+          for (const name of nextUsers) {
+            if (name !== usernameRef.current) merged.add(name);
+          }
+          return Array.from(merged);
+        });
+        refreshSession();
+        break;
+      }
       case "broadcast":
       case "private_message":
       case "file":
-        setMessages((prev) => [...prev, message]);
+        if (message.from && message.from !== usernameRef.current) {
+          ensureContact(message.from);
+          setChatUsers((prev) =>
+            prev.includes(message.from) ? prev : [...prev, message.from],
+          );
+        }
+        setMessages((prev) => [...prev, { ...message, at: new Date() }]);
+        refreshSession();
+        break;
+      case "connection_closed":
+        if (intentionalCloseRef.current) {
+          intentionalCloseRef.current = false;
+          break;
+        }
+        if (authenticatedRef.current && loadSession()) {
+          scheduleReconnect();
+        } else if (authenticatedRef.current) {
+          resetSession(mapServerReason("connection_closed"));
+        }
         break;
       case "error":
-        setError(message.reason || "Error del servidor");
+        if (
+          (message.reason === "connection_failed" ||
+            message.reason === "already_connected") &&
+          authenticatedRef.current &&
+          loadSession()
+        ) {
+          scheduleReconnect(message.reason === "already_connected" ? 2500 : 1500);
+          break;
+        }
+        setError(mapServerReason(message.reason));
         break;
       default:
         break;
     }
   }
 
-  function handleLogin(identifier, pass) {
+  messageHandlerRef.current = handleServerMessage;
+
+  function handleLogin(user, pass) {
     setError("");
     setSuccess("");
+    setReconnecting(false);
+    clearReconnectTimer();
 
-    if (SKIP_AUTH) {
-      const account = resolveDemoAccount(identifier);
-      if (!account) {
-        setError("Usuario o correo no encontrado");
-        return;
-      }
-      if (account.password && pass !== account.password) {
-        setError("Contraseña incorrecta");
-        return;
-      }
-
-      setUsername(account.username);
-      setEmail(account.email);
-      setPassword(pass || account.password);
-      setDescription(account.description || initialDemoState.description);
-      setAvatarUrl(account.avatarUrl || initialDemoState.avatarUrl);
-      setUsers(initialDemoState.users);
-      setMessages(initialDemoState.messages);
-      setContacts(mockContactProfiles);
-      setChatUsers(Object.keys(mockContactProfiles));
-      setView("home");
+    const trimmed = user.trim();
+    if (!trimmed || !pass) {
+      setError("Completa usuario y contraseña");
       return;
     }
 
-    const account = resolveDemoAccount(identifier);
-    const user = account?.username || identifier.trim();
-    setUsername(user);
-    setPassword(pass || "");
-    if (account?.email) setEmail(account.email);
-    connectSocket(user, pass, handleServerMessage);
+    intentionalCloseRef.current = false;
+    setUsername(trimmed);
+    usernameRef.current = trimmed;
+    setPassword(pass);
+    passwordRef.current = pass;
+    disconnectSocket({ silent: true });
+    connectSocket(trimmed, pass, dispatchServerMessage);
   }
 
   function handleRegister(user, mail, pass) {
     setError("");
     setSuccess("");
 
-    const username = user.trim();
+    const nextUsername = user.trim();
     const emailValue = mail.trim().toLowerCase();
 
-    if (!username || !emailValue || !pass) {
-      setError("Completa usuario, correo y contraseña");
+    if (!nextUsername || !pass) {
+      setError("Completa usuario y contraseña");
       return;
     }
 
-    if (SKIP_AUTH) {
-      const accounts = loadDemoAccounts();
-      const takenUser = Object.keys(accounts).some(
-        (name) => name.toLowerCase() === username.toLowerCase(),
-      );
-      const takenEmail = Object.values(accounts).some(
-        (account) => account.email?.toLowerCase() === emailValue,
-      );
-
-      if (
-        takenUser ||
-        username.toLowerCase() === initialDemoState.username.toLowerCase()
-      ) {
-        setError("Ese nombre de usuario ya está en uso");
-        return;
-      }
-      if (
-        takenEmail ||
-        emailValue === initialDemoState.email.toLowerCase()
-      ) {
-        setError("Ese correo ya está registrado");
-        return;
-      }
-
-      accounts[username] = {
-        email: emailValue,
-        password: pass,
-        description: "",
-        avatarUrl: "",
-      };
-      saveDemoAccounts(accounts);
-      setSuccess("Cuenta creada. Ahora inicia sesión.");
-      setView("login");
-      return;
-    }
-
+    intentionalCloseRef.current = false;
+    setUsername(nextUsername);
+    usernameRef.current = nextUsername;
     setEmail(emailValue);
-    registerUser(username, pass, handleServerMessage);
+    setPassword(pass);
+    passwordRef.current = pass;
+    disconnectSocket({ silent: true });
+    registerUser(nextUsername, pass, dispatchServerMessage);
   }
 
   function handleSend(text) {
-    if (SKIP_AUTH) {
-      setMessages((prev) => [
-        ...prev,
-        selectedUser
-          ? {
-              type: "private_message",
-              from: username,
-              to: selectedUser,
-              message: text,
-              at: new Date(),
-            }
-          : { type: "broadcast", from: username, message: text, at: new Date() },
-      ]);
-      return;
-    }
-
-    if (selectedUser) {
-      sendPrivateMessage(selectedUser, text);
-      setMessages((prev) => [
-        ...prev,
-        {
+    const payload = selectedUser
+      ? {
           type: "private_message",
           from: username,
           to: selectedUser,
           message: text,
           at: new Date(),
-        },
-      ]);
+        }
+      : {
+          type: "broadcast",
+          from: username,
+          message: text,
+          at: new Date(),
+        };
+
+    if (selectedUser) {
+      sendPrivateMessage(selectedUser, text);
     } else {
       sendBroadcast(text);
     }
+
+    setMessages((prev) => [...prev, payload]);
   }
 
   async function handleSendFile(file) {
+    if (selectedUser && !users.includes(selectedUser)) {
+      throw new Error("user_not_found");
+    }
+
     const data = await fileToBase64(file);
     const payload = {
       type: "file",
@@ -423,41 +601,34 @@ export default function App() {
       at: new Date(),
     };
 
-    if (!SKIP_AUTH) {
-      sendFile(selectedUser || null, file.name, data);
-    }
-
+    sendFile(selectedUser || null, file.name, data);
     setMessages((prev) => [...prev, payload]);
   }
 
   function handleSaveProfile(nextProfile) {
-    setUsername(nextProfile.username);
-    setEmail(nextProfile.email);
-    setPassword(nextProfile.password);
-    setDescription(nextProfile.description);
-    setAvatarUrl(nextProfile.avatarUrl);
+    const nextEmail = nextProfile.email || "";
+    const nextDescription = nextProfile.description || "";
+    const nextAvatar = nextProfile.avatarUrl || "";
+
+    setEmail(nextEmail);
+    setDescription(nextDescription);
+    setAvatarUrl(nextAvatar);
+    saveLocalProfile(username, {
+      email: nextEmail,
+      description: nextDescription,
+      avatarUrl: nextAvatar,
+    });
+    sendUpdateProfile({
+      avatarUrl: nextAvatar,
+      description: nextDescription,
+    });
   }
 
   function handleLogout() {
-    if (!SKIP_AUTH) {
-      disconnectSocket();
-    }
-    setView("login");
-    setUsername("");
-    setEmail("");
-    setPassword("");
-    setDescription("");
-    setAvatarUrl("");
-    setUsers([]);
-    setMessages([]);
-    setSelectedUser(null);
-    setViewedContact(null);
-    setViewedGroup(null);
-    setGroupsData(mockGroups);
-    setContacts(mockContactProfiles);
-    setChatUsers(Object.keys(mockContactProfiles));
-    setError("");
-    setSuccess("");
+    intentionalCloseRef.current = true;
+    clearReconnectTimer();
+    disconnectSocket({ silent: true });
+    resetSession("");
   }
 
   if (inApp) {
@@ -465,6 +636,11 @@ export default function App() {
 
     return (
       <div className="app-shell">
+        {reconnecting ? (
+          <div className="reconnect-banner" role="status">
+            Reconectando sesión…
+          </div>
+        ) : null}
         <Home
           username={username}
           avatarUrl={avatarUrl}
@@ -474,6 +650,7 @@ export default function App() {
           groupName={generalGroup?.name || "Sala general"}
           groupAvatarUrl={generalGroup?.avatarUrl || ""}
           chatUsers={chatUsers}
+          contacts={contacts}
           onSelectUser={setSelectedUser}
           onSend={handleSend}
           onSendFile={handleSendFile}

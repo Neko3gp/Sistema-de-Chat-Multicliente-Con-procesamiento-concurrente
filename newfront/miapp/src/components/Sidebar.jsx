@@ -47,6 +47,7 @@ export default function Sidebar({
   avatarUrl,
   users,
   chatUsers = [],
+  contacts = {},
   messages,
   selectedUser,
   groupName = "Sala general",
@@ -79,7 +80,12 @@ export default function Sidebar({
       isBroadcast: true,
       avatarUrl: groupAvatarUrl,
     },
-    ...privateUsers.map((user) => ({ id: user, name: user, isBroadcast: false })),
+    ...privateUsers.map((user) => ({
+      id: user,
+      name: user,
+      isBroadcast: false,
+      avatarUrl: contacts[user]?.avatarUrl || "",
+    })),
   ];
 
   const chats = entries.map((entry) => {

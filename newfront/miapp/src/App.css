@@ -9,7 +9,6 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  top: var(--app-offset, 0px);
 }
 
 .auth-panel {
@@ -219,6 +218,7 @@
 .profile-save-btn,
 .add-member-btn,
 .message-input > button[type="submit"],
+.message-input-row > button[type="submit"],
 .new-chat-fab,
 .photo-edit-btn {
   border: 1px solid var(--color-primary);
@@ -236,6 +236,7 @@
 .profile-save-btn:hover,
 .add-member-btn:hover,
 .message-input > button[type="submit"]:hover:not(:disabled),
+.message-input-row > button[type="submit"]:hover:not(:disabled),
 .new-chat-fab:hover,
 .new-chat-fab:active,
 .photo-edit-btn:hover {
@@ -547,6 +548,8 @@
   grid-template-rows: auto 1fr auto;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   background: transparent;
 }
@@ -893,6 +896,8 @@
 .messages {
   padding: 8px 10px;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
@@ -904,6 +909,10 @@
 .empty {
   color: var(--color-text-muted);
   margin: auto;
+  max-width: 100%;
+  padding: 0 16px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .bubble-row {
@@ -928,6 +937,12 @@
   color: var(--color-text-inverse);
   font-size: 0.68rem;
   font-weight: 700;
+}
+
+.bubble-avatar.photo {
+  object-fit: cover;
+  display: block;
+  background: var(--color-surface-elevated);
 }
 
 .bubble {
@@ -1025,8 +1040,14 @@
 
 .message-input {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: visible;
   padding: 12px 16px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--glass-border-soft);
@@ -1040,6 +1061,15 @@
 
 .message-input .file-picker {
   display: none;
+}
+
+.message-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .attach-wrap {
@@ -1065,36 +1095,38 @@
 }
 
 .file-type-menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
-  min-width: 160px;
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
   padding: 6px;
   border-radius: 14px;
   border: 1px solid var(--glass-border);
-  background: var(--glass-bg-strong);
+  background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--glass-shadow), var(--glass-inset);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  box-shadow: var(--glass-inset);
   z-index: 20;
 }
 
 .file-type-menu button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
+  min-width: 0;
   border: none;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 10px 8px;
   background: transparent;
   color: var(--color-text);
-  text-align: left;
+  text-align: center;
   cursor: pointer;
   font: inherit;
+  font-size: 0.85rem;
 }
 
 .file-type-menu button:hover,
@@ -1103,8 +1135,10 @@
 }
 
 .message-input-main {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1112,6 +1146,8 @@
 
 .message-input input {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--glass-border-soft);
   border-radius: 999px;
   background: var(--glass-bg-soft);
@@ -1127,11 +1163,16 @@
 }
 
 .pending-file {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 10px 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 10px 12px;
   border-radius: 999px;
   border: 1px solid var(--glass-border-soft);
   background: var(--glass-bg-soft);
@@ -1140,10 +1181,22 @@
 }
 
 .pending-file-label {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.pending-file-label > svg {
+  flex-shrink: 0;
+}
+
+.pending-file-name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1154,7 +1207,10 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  padding: 0 4px;
+  padding: 4px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
 }
@@ -1172,13 +1228,13 @@
   font-size: 0.75rem;
 }
 
-.message-input > button[type="submit"] {
+.message-input-row > button[type="submit"] {
   border-radius: 999px;
   padding: 12px 18px;
   flex-shrink: 0;
 }
 
-.message-input > button[type="submit"]:disabled {
+.message-input-row > button[type="submit"]:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -1426,14 +1482,28 @@
   height: var(--app-height, 100dvh);
   overflow: hidden;
   position: relative;
-  top: var(--app-offset, 0px);
+}
+
+.reconnect-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-secondary) 35%, var(--glass-bg-strong));
+  border-bottom: 1px solid var(--glass-border-soft);
 }
 
 .app-dialog-backdrop {
   position: fixed;
   left: 0;
   right: 0;
-  top: var(--app-offset, 0px);
+  top: 0;
   height: var(--app-height, 100dvh);
   z-index: 80;
   background: var(--glass-backdrop);
