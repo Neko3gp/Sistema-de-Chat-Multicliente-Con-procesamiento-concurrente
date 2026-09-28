@@ -1,5 +1,3 @@
-/** Datos mock para simular chats mientras el backend no está conectado */
-
 const now = Date.now();
 const minutes = (n) => new Date(now - n * 60 * 1000);
 
@@ -13,7 +11,6 @@ export const demoUser = {
 
 export const connectedUsers = ["Demo", "Ana", "Carlos", "Luis", "María"];
 
-/** Grupos / salas (broadcast) */
 export const groups = {
   general: {
     id: "general",
@@ -56,9 +53,7 @@ export const contactProfiles = {
   },
 };
 
-/** Conversación general (broadcast) + privados */
 export const mockMessages = [
-  // Sala general
   {
     type: "broadcast",
     from: "Carlos",
@@ -68,31 +63,31 @@ export const mockMessages = [
   {
     type: "broadcast",
     from: "Ana",
-    message: "Yo estoy en el front. Aún uso modo demo.",
+    message: "Sí, yo estoy en el front revisando la interfaz.",
     at: minutes(54),
   },
   {
     type: "broadcast",
     from: "Demo",
-    message: "Perfecto, yo también. Luego conectamos el WebSocket.",
+    message: "Perfecto. En un rato probamos la conexión juntos.",
     at: minutes(53),
   },
   {
     type: "broadcast",
     from: "Luis",
-    message: "Recuerden: un hilo por cliente y Lock en ConnectionManager 👀",
+    message: "Recuerden: un hilo por cliente y Lock en ConnectionManager.",
     at: minutes(50),
   },
   {
     type: "broadcast",
     from: "María",
-    message: "El contrato de mensajes está en docs/PROTOCOLO_MENSAJES.md",
+    message: "El contrato de mensajes está en la carpeta docs.",
     at: minutes(48),
   },
   {
     type: "broadcast",
     from: "Carlos",
-    message: "Hola a todos 👋 ¿reunión a las 6?",
+    message: "Hola a todos, ¿reunión a las 6?",
     at: minutes(20),
   },
   {
@@ -101,13 +96,11 @@ export const mockMessages = [
     message: "Va, yo sí puedo.",
     at: minutes(19),
   },
-
-  // Chat privado con Ana
   {
     type: "private_message",
     from: "Ana",
     to: "Demo",
-    message: "Oye, ¿ya viste el sidebar tipo WhatsApp?",
+    message: "Oye, ¿ya viste el sidebar?",
     at: minutes(40),
   },
   {
@@ -121,7 +114,7 @@ export const mockMessages = [
     type: "private_message",
     from: "Ana",
     to: "Demo",
-    message: "También podemos meter temas liquid glass ✨",
+    message: "También podemos agregar temas de color.",
     at: minutes(38),
   },
   {
@@ -131,20 +124,18 @@ export const mockMessages = [
     message: "Hecho. Luego lo revisamos juntos.",
     at: minutes(36),
   },
-
-  // Chat privado con Carlos
   {
     type: "private_message",
     from: "Carlos",
     to: "Demo",
-    message: "Cuando conectemos el socket, el login manda username + password.",
+    message: "El login manda username y password al servidor.",
     at: minutes(30),
   },
   {
     type: "private_message",
     from: "Demo",
     to: "Carlos",
-    message: "Ok. Por ahora SKIP_AUTH está en true.",
+    message: "Ok. Lo dejo listo para cuando conectemos.",
     at: minutes(29),
   },
   {
@@ -154,8 +145,6 @@ export const mockMessages = [
     message: "Perfecto. Avísame para probar broadcast y privados.",
     at: minutes(28),
   },
-
-  // Chat privado con Luis
   {
     type: "private_message",
     from: "Luis",
@@ -170,27 +159,25 @@ export const mockMessages = [
     message: "Todavía no. Lo hago después de terminar la UI.",
     at: minutes(24),
   },
-
-  // Chat privado con María
   {
     type: "private_message",
     from: "María",
     to: "Demo",
-    message: "Te pasé el formato JSON de file en base64.",
+    message: "Te pasé el formato para enviar archivos.",
     at: minutes(15),
   },
   {
     type: "private_message",
     from: "Demo",
     to: "María",
-    message: "Gracias. Lo dejo listo en FileMessage.",
+    message: "Gracias. Ya lo tengo en la vista de mensajes.",
     at: minutes(14),
   },
   {
     type: "private_message",
     from: "María",
     to: "Demo",
-    message: "Máximo 5 MiB, si no responde file_too_large.",
+    message: "Máximo 5 MiB por archivo.",
     at: minutes(13),
   },
 ];

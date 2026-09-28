@@ -1,10 +1,15 @@
 .auth-screen {
   position: relative;
-  min-height: 100svh;
+  min-height: var(--app-height, 100dvh);
+  height: var(--app-height, 100dvh);
   display: grid;
   grid-template-columns: 1fr;
   background: transparent;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  top: var(--app-offset, 0px);
 }
 
 .auth-panel {
@@ -12,8 +17,10 @@
   z-index: 1;
   display: grid;
   place-items: center;
+  align-content: center;
   padding: 24px;
-  min-height: 100svh;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  min-height: 100%;
 }
 
 .auth-visual {
@@ -74,6 +81,8 @@
   .auth-panel {
     min-height: 0;
     height: 100svh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 40px;
     background: color-mix(in srgb, var(--color-bg) 72%, transparent);
     backdrop-filter: blur(8px);
@@ -169,7 +178,7 @@
   border-radius: 12px;
   background: var(--glass-bg-soft);
   color: var(--color-text);
-  font: inherit;
+  font-size: 16px;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -186,29 +195,8 @@
 
 .auth-card button {
   padding: 12px 14px;
-  border: none;
   border-radius: 12px;
-  background: var(--color-primary);
-  color: var(--color-primary-on);
   font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.auth-card button:hover {
-  background: var(--color-primary-hover);
-}
-
-.auth-card .linkish {
-  background: transparent;
-  color: var(--color-text-soft);
-  border: 1px solid var(--glass-border-soft);
-  font-weight: 500;
-}
-
-.auth-card .linkish:hover {
-  background: var(--glass-bg-soft);
-  color: var(--color-text);
 }
 
 .auth-error {
@@ -223,11 +211,87 @@
   font-size: 0.9rem;
 }
 
+.btn-primary,
+.auth-card > button[type="submit"],
+.confirm-dialog-actions > button:not(.ghost):not(.danger),
+.profile-photo-actions > button:not(.danger),
+.profile-url-actions > button:not(.ghost):not(.danger),
+.profile-save-btn,
+.add-member-btn,
+.message-input > button[type="submit"],
+.new-chat-fab,
+.photo-edit-btn {
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-on);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover,
+.auth-card > button[type="submit"]:hover,
+.confirm-dialog-actions > button:not(.ghost):not(.danger):hover,
+.profile-photo-actions > button:not(.danger):hover,
+.profile-url-actions > button:not(.ghost):not(.danger):hover,
+.profile-save-btn:hover,
+.add-member-btn:hover,
+.message-input > button[type="submit"]:hover:not(:disabled),
+.new-chat-fab:hover,
+.new-chat-fab:active,
+.photo-edit-btn:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.btn-secondary,
+.ghost,
+.linkish,
+.auth-card .linkish,
+.confirm-dialog-actions .ghost,
+.profile-url-actions .ghost {
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary:hover,
+.ghost:hover,
+.linkish:hover,
+.auth-card .linkish:hover,
+.confirm-dialog-actions .ghost:hover,
+.profile-url-actions .ghost:hover {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-danger,
+.danger,
+.confirm-dialog-actions .danger,
+.profile-photo-actions .danger,
+.profile-logout-btn {
+  border: 1px solid var(--color-danger);
+  background: transparent;
+  color: var(--color-danger);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-danger:hover,
+.danger:hover,
+.confirm-dialog-actions .danger:hover,
+.profile-photo-actions .danger:hover,
+.profile-logout-btn:hover {
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+
 .home-layout {
   display: grid;
   grid-template-columns: 380px 1fr;
-  height: 100svh;
-  max-height: 100svh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   width: 100%;
   overflow: hidden;
   background: transparent;
@@ -254,6 +318,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px 8px;
+  padding-top: max(14px, env(safe-area-inset-top));
 }
 
 .sidebar-top h1 {
@@ -310,7 +375,7 @@
   outline: none;
   background: transparent;
   color: var(--color-text);
-  font: inherit;
+  font-size: 16px;
 }
 
 .sidebar-search input::placeholder {
@@ -491,13 +556,12 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
   border-bottom: 1px solid var(--glass-border-soft);
   background: var(--glass-bg-strong);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--glass-inset);
-  position: sticky;
-  top: 0;
   z-index: 5;
   flex-shrink: 0;
 }
@@ -561,9 +625,26 @@
 
 .group-members h3 {
   margin: 0;
-  padding: 4px 16px 12px;
   font-size: 0.9rem;
   color: var(--color-primary);
+}
+
+.group-members-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 16px 12px;
+}
+
+.add-member-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.85rem;
 }
 
 .group-members ul {
@@ -648,13 +729,15 @@
 .confirm-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 200;
   background: var(--glass-backdrop);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  display: grid;
-  place-items: center;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) 20px
+    max(24px, env(safe-area-inset-bottom));
 }
 
 .confirm-dialog {
@@ -690,7 +773,7 @@
   border-radius: 12px;
   background: var(--glass-bg-soft);
   color: var(--color-text);
-  font: inherit;
+  font-size: 16px;
   resize: vertical;
 }
 
@@ -702,26 +785,12 @@
 }
 
 .confirm-dialog-actions button {
-  border: none;
   border-radius: 999px;
   padding: 10px 16px;
   font: inherit;
-  cursor: pointer;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  font-weight: 600;
-}
-
-.confirm-dialog-actions .ghost {
-  background: var(--glass-bg-soft);
-  color: var(--color-text);
-  border: 1px solid var(--glass-border-soft);
 }
 
 .confirm-dialog-actions .danger {
-  background: transparent;
-  color: var(--color-danger);
-  border: 1px solid var(--color-border-strong);
   margin-right: auto;
 }
 
@@ -750,20 +819,15 @@
   bottom: 22px;
   width: 58px;
   height: 58px;
-  border: none;
   border-radius: 50%;
-  background: var(--color-primary);
-  color: var(--color-primary-on);
   box-shadow:
     0 4px 14px color-mix(in srgb, var(--color-primary) 45%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.25);
-  cursor: pointer;
   z-index: 5;
 }
 
 .new-chat-fab:hover,
 .new-chat-fab:active {
-  background: var(--color-primary-hover, var(--color-primary));
   transform: scale(1.04);
 }
 
@@ -964,13 +1028,12 @@
   align-items: flex-end;
   gap: 8px;
   padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--glass-border-soft);
   background: var(--glass-bg-strong);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--glass-inset);
-  position: sticky;
-  bottom: 0;
   z-index: 5;
   flex-shrink: 0;
 }
@@ -1054,6 +1117,7 @@
   background: var(--glass-bg-soft);
   color: var(--color-text);
   padding: 12px 14px;
+  font-size: 16px;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -1109,18 +1173,13 @@
 }
 
 .message-input > button[type="submit"] {
-  border: none;
   border-radius: 999px;
   padding: 12px 18px;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  font-weight: 600;
-  cursor: pointer;
   flex-shrink: 0;
 }
 
 .message-input > button[type="submit"]:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -1173,7 +1232,7 @@
 }
 
 .profile-page {
-  min-height: 100svh;
+  min-height: 100%;
   background: transparent;
   color: var(--color-text);
   display: flex;
@@ -1252,19 +1311,11 @@
   bottom: 6px;
   width: 40px;
   height: 40px;
-  border: none;
   border-radius: 50%;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
   font-size: 1.15rem;
-  cursor: pointer;
   box-shadow: 0 2px 8px var(--color-shadow);
   display: grid;
   place-items: center;
-}
-
-.photo-edit-btn:hover {
-  background: var(--color-primary-hover);
 }
 
 .profile-photo-actions {
@@ -1278,21 +1329,13 @@
 .profile-url-actions button,
 .profile-save-btn,
 .profile-logout-btn {
-  border: none;
   border-radius: 8px;
   padding: 9px 14px;
   font: inherit;
-  cursor: pointer;
 }
 
 .profile-photo-actions button {
   width: 100%;
-  background: var(--color-surface-elevated);
-  color: var(--color-text);
-}
-
-.profile-photo-actions .danger {
-  color: var(--color-danger);
 }
 
 .profile-url-box {
@@ -1318,7 +1361,7 @@
   border-radius: 12px;
   background: var(--glass-bg-soft);
   color: var(--color-text);
-  font: inherit;
+  font-size: 16px;
   resize: vertical;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -1335,18 +1378,6 @@
   display: flex;
   gap: 8px;
   margin-top: 10px;
-}
-
-.profile-url-actions button {
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  font-weight: 600;
-}
-
-.profile-url-actions .ghost {
-  background: var(--color-surface-elevated);
-  color: var(--color-text);
-  font-weight: 500;
 }
 
 .profile-display-name {
@@ -1387,54 +1418,56 @@
   color: var(--color-primary);
 }
 
-.profile-save-btn {
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  font-weight: 700;
-}
-
 .profile-logout-btn {
   margin: 16px 20px 28px;
-  background: transparent;
-  color: var(--color-danger);
-  border: 1px solid var(--color-border-strong);
-  font-weight: 600;
 }
 
 .app-shell {
-  height: 100svh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
+  position: relative;
+  top: var(--app-offset, 0px);
 }
 
 .app-dialog-backdrop {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--app-offset, 0px);
+  height: var(--app-height, 100dvh);
   z-index: 80;
   background: var(--glass-backdrop);
   backdrop-filter: blur(10px) saturate(140%);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: center;
+  overflow: hidden;
 }
 
 .app-dialog {
   width: 100%;
-  max-height: 92svh;
-  overflow: auto;
+  height: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
   border-bottom: none;
-  border-radius: 22px 22px 0 0;
+  border-radius: 0;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--glass-shadow), var(--glass-inset);
   animation: dialog-up 180ms ease-out;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .app-dialog .profile-page,
 .app-dialog .settings-page {
   min-height: auto;
+  padding-bottom: 24px;
 }
 
 .app-dialog .profile-topbar .back-btn,
@@ -1454,7 +1487,6 @@
   }
 }
 
-/* Desktop: también como ventana emergente centrada */
 @media (min-width: 721px) {
   .app-dialog-backdrop {
     align-items: center;
@@ -1464,6 +1496,7 @@
 
   .app-dialog {
     width: min(520px, 100%);
+    height: auto;
     max-height: min(88svh, 820px);
     border-radius: 22px;
     border-bottom: 1px solid var(--glass-border);
@@ -1488,7 +1521,7 @@
 }
 
 .settings-page {
-  min-height: 100svh;
+  min-height: 100%;
   background: transparent;
   color: var(--color-text);
 }
@@ -1630,8 +1663,20 @@
   background: linear-gradient(135deg, #efeae2 50%, #008069 50%);
 }
 
-.theme-preview.midnight {
-  background: linear-gradient(135deg, #0b1020 50%, #7c9cff 50%);
+.theme-preview.system {
+  background:
+    linear-gradient(135deg, #0b141a 0 50%, #efeae2 50% 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 168, 132, 0.35);
+}
+
+.theme-preview.uach-light {
+  background: linear-gradient(135deg, #ffffff 50%, #680d5c 50%);
+  box-shadow: inset 0 0 0 1px rgba(245, 183, 60, 0.55);
+}
+
+.theme-preview.uach-dark {
+  background: linear-gradient(135deg, #0a0a0a 50%, #680d5c 50%);
+  box-shadow: inset 0 0 0 1px rgba(245, 183, 60, 0.45);
 }
 
 .theme-card-text {
@@ -1663,12 +1708,12 @@
 
   .home-layout.chat-open .home-main {
     display: grid;
-    height: 100svh;
+    height: var(--app-height, 100dvh);
   }
 
   .sidebar {
     border-right: none;
-    height: 100svh;
+    height: var(--app-height, 100dvh);
     max-height: none;
   }
 

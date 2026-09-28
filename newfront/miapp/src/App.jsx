@@ -19,10 +19,15 @@ import {
   groups as mockGroups,
 } from "./data/conversations";
 import { fileToBase64 } from "./utils/files";
+import {
+  applyTheme,
+  followsSystem,
+  loadThemePreference,
+  resolveTheme,
+  saveThemePreference,
+} from "./utils/theme";
 import "./App.css";
 
-// TODO: poner en false cuando el backend esté listo
-// true = tras login usa datos demo (sin WebSocket)
 const SKIP_AUTH = true;
 const DEMO_ACCOUNTS_KEY = "chat-demo-accounts";
 
@@ -79,8 +84,9 @@ export default function App() {
   const [view, setView] = useState("login");
   const [returnView, setReturnView] = useState("home");
   const [viewedGroup, setViewedGroup] = useState(null);
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("chat-theme") || "dark",
+  const [themePreference, setThemePreference] = useState(loadThemePreference);
+  const [theme, setTheme] = useState(() =>
+    resolveTheme(loadThemePreference()),
   );
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -117,14 +123,26 @@ export default function App() {
     setView("settings");
   }
 
-  function handleThemeChange(nextTheme) {
-    setTheme(nextTheme);
-    localStorage.setItem("chat-theme", nextTheme);
+  function handleThemeChange(nextPreference) {
+    setThemePreference(nextPreference);
+    saveThemePreference(nextPreference);
+    setTheme(resolveTheme(nextPreference));
   }
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!followsSystem(themePreference)) return undefined;
+
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const syncSystemTheme = () => setTheme(resolveTheme(themePreference));
+
+    syncSystemTheme();
+    media.addEventListener("change", syncSystemTheme);
+    return () => media.removeEventListener("change", syncSystemTheme);
+  }, [themePreference]);
 
   function findContactByQuery(query) {
     const q = query.trim().toLowerCase();
@@ -161,7 +179,6 @@ export default function App() {
         ? raw.split("@")[0].replace(/[^\w.-]/g, "") || "Usuario"
         : raw;
 
-      // Evitar colisión de mayúsculas con un contacto existente
       const existing = findContactByQuery(contactName);
       if (existing) {
         contactName = existing;
@@ -300,7 +317,6 @@ export default function App() {
       return;
     }
 
-    // Backend actual autentica por username; si es correo, se resuelve en local si existe
     const account = resolveDemoAccount(identifier);
     const user = account?.username || identifier.trim();
     setUsername(user);
@@ -357,7 +373,6 @@ export default function App() {
       return;
     }
 
-    // El protocolo del backend solo envía username + password por ahora
     setEmail(emailValue);
     registerUser(username, pass, handleServerMessage);
   }
@@ -484,7 +499,8 @@ export default function App() {
               onClick={(event) => event.stopPropagation()}
             >
               <Settings
-                theme={theme}
+                themePreference={themePreference}
+                resolvedTheme={theme}
                 onThemeChange={handleThemeChange}
                 onOpenProfile={() => openOwnProfile("settings")}
                 onBack={closeOverlay}
@@ -556,6 +572,7 @@ export default function App() {
                 group={viewedGroup}
                 currentUser={username}
                 onlineUsers={users}
+                contacts={contacts}
                 onBack={closeOverlay}
                 onOpenMember={(member) => openContactProfile(member, "group")}
                 onSave={handleSaveGroup}

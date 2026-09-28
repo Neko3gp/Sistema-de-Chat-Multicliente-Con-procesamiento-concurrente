@@ -1,15 +1,19 @@
-// Contrato completo en docs/PROTOCOLO_MENSAJES.md
-// El backend habla WebSocket nativo en ws://<host>:5000 — no requiere
-// ninguna librería adicional del lado de React.
-
 let socket = null;
+
+function getWsUrl() {
+  const host =
+    typeof window !== "undefined" && window.location.hostname
+      ? window.location.hostname
+      : "localhost";
+  return `ws://${host}:5000`;
+}
 
 function ensureSocket(onMessage) {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return socket;
   }
 
-  socket = new WebSocket("ws://localhost:5000");
+  socket = new WebSocket(getWsUrl());
 
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data);

@@ -1,9 +1,43 @@
 export default function Settings({
-  theme,
+  themePreference,
+  resolvedTheme,
   onThemeChange,
   onOpenProfile,
   onBack,
 }) {
+  const options = [
+    {
+      id: "system",
+      title: "Automático",
+      subtitle: "Sigue el tema del celular",
+      preview: "system",
+    },
+    {
+      id: "dark",
+      title: "Oscuro",
+      subtitle: "Estilo chat clásico",
+      preview: "dark",
+    },
+    {
+      id: "light",
+      title: "Claro",
+      subtitle: "Fondos claros y buen contraste",
+      preview: "light",
+    },
+    {
+      id: "uach-light",
+      title: "UACH claro",
+      subtitle: "Morado y oro sobre blanco",
+      preview: "uach-light",
+    },
+    {
+      id: "uach-dark",
+      title: "UACH oscuro",
+      subtitle: "Morado y oro sobre negro",
+      preview: "uach-dark",
+    },
+  ];
+
   return (
     <div className="settings-page">
       <header className="settings-topbar">
@@ -31,54 +65,38 @@ export default function Settings({
       <section className="settings-section">
         <h2>Temas</h2>
         <p className="settings-section-desc">
-          Elige la apariencia de la aplicación
+          Por defecto Automático sigue el modo del celular. También puedes fijar
+          uno manual.
+          {themePreference === "system"
+            ? ` Ahora: ${resolvedTheme === "light" ? "claro" : "oscuro"}.`
+            : ""}
         </p>
 
         <div className="theme-options">
-          <label className={theme === "dark" ? "theme-card active" : "theme-card"}>
-            <input
-              type="radio"
-              name="theme"
-              value="dark"
-              checked={theme === "dark"}
-              onChange={() => onThemeChange("dark")}
-            />
-            <span className="theme-preview dark" aria-hidden="true" />
-            <span className="theme-card-text">
-              <strong>Oscuro</strong>
-              <small>Estilo chat clásico</small>
-            </span>
-          </label>
-
-          <label className={theme === "light" ? "theme-card active" : "theme-card"}>
-            <input
-              type="radio"
-              name="theme"
-              value="light"
-              checked={theme === "light"}
-              onChange={() => onThemeChange("light")}
-            />
-            <span className="theme-preview light" aria-hidden="true" />
-            <span className="theme-card-text">
-              <strong>Claro</strong>
-              <small>Fondos claros y contraste suave</small>
-            </span>
-          </label>
-
-          <label className={theme === "midnight" ? "theme-card active" : "theme-card"}>
-            <input
-              type="radio"
-              name="theme"
-              value="midnight"
-              checked={theme === "midnight"}
-              onChange={() => onThemeChange("midnight")}
-            />
-            <span className="theme-preview midnight" aria-hidden="true" />
-            <span className="theme-card-text">
-              <strong>Medianoche</strong>
-              <small>Azul profundo con acentos</small>
-            </span>
-          </label>
+          {options.map((option) => (
+            <label
+              key={option.id}
+              className={
+                themePreference === option.id ? "theme-card active" : "theme-card"
+              }
+            >
+              <input
+                type="radio"
+                name="theme"
+                value={option.id}
+                checked={themePreference === option.id}
+                onChange={() => onThemeChange(option.id)}
+              />
+              <span
+                className={`theme-preview ${option.preview}`}
+                aria-hidden="true"
+              />
+              <span className="theme-card-text">
+                <strong>{option.title}</strong>
+                <small>{option.subtitle}</small>
+              </span>
+            </label>
+          ))}
         </div>
       </section>
     </div>
