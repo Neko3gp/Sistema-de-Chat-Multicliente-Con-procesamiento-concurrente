@@ -18,6 +18,7 @@ class Connection:
         self.socket = client_socket
         self.manager = manager
         self.username = None
+        self.role = None
         self._outgoing = queue.Queue(maxsize=1000)
         self._lock = threading.Lock()
         self._closed = False
@@ -27,12 +28,13 @@ class Connection:
         )
         self._writer.start()
 
-    def bind(self, username):
+    def bind(self, username, role):
         """Asocia una identidad una sola vez, salvo que ya se haya cerrado."""
         with self._lock:
             if self._closed or self.username is not None:
                 return False
             self.username = username
+            self.role = role
             self._writer.name = f"writer-{username}"
             return True
 
@@ -94,8 +96,13 @@ class Connection:
             except OSError:
                 pass
             self.socket.close()
+        if self.manager.monitor_hub is not None:
+            self.manager.monitor_hub.unsubscribe(self)
+        removed = self.username is not None and self.manager.remove(self.username, self)
+        # El evento se publica cuando el nombre ya está libre y las métricas
+        # dejan de contar esta sesión; evita mostrar desconexiones anticipadas.
         log_event("disconnect", self.username, reason=reason)
-        if self.username and self.manager.remove(self.username, self):
+        if removed and self.role == "user":
             self.manager.broadcast({"type": "user_list", "users": self.manager.all_usernames()})
 
     def wait_closed(self):
@@ -110,21 +117,26 @@ class ConnectionManager:
     def __init__(self):
         """Crea el registro de usuario a Connection y su lock."""
         self._clients = {}
+        self._sessions = {}  # Incluye admins para mantener la unicidad del login.
         self._lock = threading.Lock()
+        self.monitor_hub = None
 
-    def add(self, username, connection):
+    def add(self, username, connection, role="user"):
         """Reserva atómicamente el usuario; nunca reemplaza una sesión existente."""
         with self._lock:
-            if username in self._clients or not connection.bind(username):
+            if username in self._sessions or not connection.bind(username, role):
                 return False
-            self._clients[username] = connection
+            self._sessions[username] = connection
+            if role == "user":
+                self._clients[username] = connection
             return True
 
     def remove(self, username, connection):
         """Retira la conexión indicada sin borrar una sesión posterior."""
         with self._lock:
-            if self._clients.get(username) is connection:
-                del self._clients[username]
+            if self._sessions.get(username) is connection:
+                del self._sessions[username]
+                self._clients.pop(username, None)
                 return True
             return False
 
@@ -134,7 +146,7 @@ class ConnectionManager:
             return self._clients.get(username)
 
     def all_usernames(self):
-        """Devuelve una copia de los nombres conectados."""
+        """Devuelve una copia de los usuarios de chat, excluyendo admins."""
         with self._lock:
             return list(self._clients)
 

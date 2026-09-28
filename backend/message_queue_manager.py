@@ -24,6 +24,10 @@ class MessageQueueManager:
         """Añade trabajo en el orden de recepción de la cola compartida."""
         self._queue.put(item)
 
+    def qsize(self):
+        """Devuelve el número aproximado de mensajes pendientes para el monitor."""
+        return self._queue.qsize()
+
     def _process_loop(self):
         """Procesa cada elemento y registra fallos sin perder el hilo worker."""
         while True:

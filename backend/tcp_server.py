@@ -8,6 +8,7 @@ import threading
 from client_handler import handle_client, process_message
 from connection_manager import ConnectionManager
 from message_queue_manager import MessageQueueManager
+from monitor_hub import MonitorHub
 import database
 from server_log import configure_logging, logger
 
@@ -17,21 +18,26 @@ def start_server(host="0.0.0.0", port=5000):
     configure_logging()
     database.init_db()
 
-    connection_manager = ConnectionManager()
-    message_queue = MessageQueueManager(handler=process_message)
-
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((host, port))
     server.listen()
+    connection_manager = ConnectionManager()
+    message_queue = MessageQueueManager(handler=process_message)
+    monitor = MonitorHub(connection_manager, message_queue)
+    connection_manager.monitor_hub = monitor
     logger.info("Servidor escuchando en %s:%s", host, port)
 
-    while True:
-        client_socket, address = server.accept()
-        thread = threading.Thread(
-            target=handle_client,
-            args=(client_socket, address, connection_manager, message_queue),
-            name=f"client-{address[0]}:{address[1]}",
-            daemon=True,
-        )
-        thread.start()
+    try:
+        while True:
+            client_socket, address = server.accept()
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, address, connection_manager, message_queue),
+                name=f"client-{address[0]}:{address[1]}",
+                daemon=True,
+            )
+            thread.start()
+    finally:
+        server.close()
+        monitor.stop()

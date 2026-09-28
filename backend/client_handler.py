@@ -59,8 +59,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
 
             if msg_type == "register":
                 ok = database.create_user(message.get("username"), message.get("password"))
-                reason = None if ok else "username_taken"
-                _reply(connection, {"type": "register_result", "ok": ok, "reason": reason})
+                register_reason = None if ok else "username_taken"
+                _reply(connection, {"type": "register_result", "ok": ok, "reason": register_reason})
                 continue
 
             if msg_type == "login":
@@ -75,7 +75,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     _reply(connection, {"type": "login_result", "ok": False,
                                            "reason": "invalid_credentials"})
                     continue
-                if username is not None or not connection_manager.add(login_username, connection):
+                role = database.get_user_role(login_username)
+                if username is not None or not connection_manager.add(login_username, connection, role):
                     log_event("login_failed", login_username, reason="already_connected")
                     _reply(connection, {"type": "error", "reason": "already_connected"})
                     continue
@@ -83,11 +84,31 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 threading.current_thread().name = f"client-{username}"
                 log_event("connect", username, phase="login", result="ok")
                 _reply(connection, {"type": "login_result", "ok": True, "reason": None,
-                                    "role": database.get_user_role(username)})
-                _broadcast_user_list(connection_manager)
+                                    "role": role})
+                if role == "admin":
+                    connection_manager.monitor_hub.subscribe(connection)
+                else:
+                    _broadcast_user_list(connection_manager)
                 continue
 
-            # A partir de aquí el usuario ya debe estar logueado
+            if msg_type == "monitor_subscribe":
+                if connection.role != "admin":
+                    _reply(connection, {"type": "error", "reason": "forbidden"})
+                else:
+                    connection_manager.monitor_hub.subscribe(connection)
+                continue
+
+            # El monitor es exclusivo de admins; el chat requiere una sesión user.
+            if username is None:
+                _reply(connection, {"type": "error", "reason": "authentication_required"})
+                continue
+            if connection.role == "admin":
+                _reply(connection, {"type": "error", "reason": "forbidden"})
+                continue
+            if msg_type not in {"broadcast", "private_message", "file"}:
+                _reply(connection, {"type": "error", "reason": "invalid_message"})
+                continue
+            connection_manager.monitor_hub.record_message(len(raw.encode("utf-8")))
             message["from"] = username
             message_queue.put({"message": message, "connection_manager": connection_manager})
 

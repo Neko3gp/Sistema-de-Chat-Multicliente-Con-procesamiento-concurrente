@@ -18,14 +18,21 @@ class RecentLogHandler(logging.Handler):
         """Crea el buffer; el lock del Handler protege lecturas y escrituras."""
         super().__init__()
         self.entries = deque(maxlen=200)
+        self.publisher = None
 
     def emit(self, record):
         """Guarda exclusivamente el mensaje del registro y sus metadatos."""
-        self.entries.append({
+        entry = {
             "ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
             "thread": record.threadName, "level": record.levelname,
             "msg": record.getMessage(),
-        })
+        }
+        self.entries.append(entry)
+        publisher = self.publisher
+        if publisher is not None and hasattr(record, "monitor_event"):
+            publisher({"type": "monitor_event", "event": record.monitor_event,
+                       "ts": entry["ts"], "thread": entry["thread"],
+                       "user": record.monitor_user, "detail": dict(record.monitor_detail)})
 
     def snapshot(self):
         """Devuelve entradas independientes bajo el lock del handler."""

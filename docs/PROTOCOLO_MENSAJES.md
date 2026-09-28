@@ -19,6 +19,15 @@ se elimina ese timeout para permitir sesiones inactivas.
 { "type": "register", "username": "Usuario1", "password": "1234" }
 ```
 
+### Suscripción al monitor
+```json
+{ "type": "monitor_subscribe" }
+```
+
+El administrador queda suscrito automáticamente tras el login. Esta solicitud
+es idempotente para un admin ya suscrito. Una conexión sin rol `admin` recibe
+`{"type":"error","reason":"forbidden"}`, incluso antes del login.
+
 ### Mensaje general (broadcast)
 ```json
 { "type": "broadcast", "message": "Hola a todos" }
@@ -80,8 +89,10 @@ Si el usuario ya existe:
 El login correcto incluye `role`, con valor `user` o `admin` según la cuenta
 almacenada en SQLite. El registro web crea cuentas `user`; enviar un campo
 `role` desde el cliente no permite elegir privilegios. `reason` conserva su
-valor `null` en respuestas exitosas. El aislamiento del administrador y sus
-mensajes de monitoreo se implementarán en T5.
+valor `null` en respuestas exitosas. El administrador recibe su `login_result`
+antes del snapshot; no aparece en `user_list`, no recibe mensajes de chat ni
+archivos y no puede enviar mensajes de chat (recibe `forbidden`). Su sesión
+también está protegida contra logins duplicados.
 
 Si las credenciales no son válidas:
 
@@ -106,11 +117,76 @@ está autenticada.
 Valores posibles de `reason` (agregar más conforme se necesiten):
 `username_taken`, `invalid_credentials`, `user_not_found`,
 `authentication_required`, `invalid_message`, `message_too_large`, `file_too_large`,
-`already_connected`.
+`already_connected`, `forbidden`.
 
 Cada conexión tiene una cola de salida de hasta 1000 mensajes y un escritor
 exclusivo. Si la cola se llena, se cierra esa conexión y se actualiza `user_list`;
 no se garantiza entregar mensajes pendientes ni un error antes del cierre.
+
+### Monitor: estado inicial
+```json
+{
+  "type": "monitor_snapshot",
+  "log": [{"ts": "2026-09-27T20:00:00+00:00", "thread": "client-user01", "level": "INFO", "msg": "..."}],
+  "stats": {},
+  "users": ["user01", "user02"]
+}
+```
+
+`log` contiene hasta 200 entradas recientes, en orden cronológico; `stats`
+contiene los mismos campos numéricos que `monitor_stats`, sin `type`.
+`users` incluye únicamente sesiones de chat. Los timestamps usan ISO 8601 UTC.
+
+### Monitor: eventos en vivo
+```json
+{
+  "type": "monitor_event",
+  "event": "message",
+  "ts": "2026-09-27T20:00:00+00:00",
+  "thread": "client-user01",
+  "user": "user01",
+  "detail": {"message_type": "private_message", "to": "user02", "bytes": 120}
+}
+```
+
+`event` puede ser `connect`, `disconnect`, `login_failed`, `message`,
+`broadcast`, `file` o `error`. Antes de autenticar, `user` puede ser `null`.
+`connect` distingue TCP (`detail.phase: "tcp"`, dirección IP:puerto) y login
+correcto (`detail.phase: "login"`). Un `message` registra el tipo y tamaño del
+JSON recibido, nunca el texto, contraseña o base64. Los broadcasts incluyen
+`recipients`; los archivos incluyen `filename`, `to`, `bytes` decodificados y
+`duration_ms` desde el inicio de serialización hasta completar `sendall` (no es
+un acuse de recibo del destinatario). Los errores y desconexiones incluyen
+`reason`. La cola del monitor admite 1000 eventos y descarta los más antiguos
+al saturarse; el stream no es un historial garantizado. El snapshot y los
+eventos próximos a la suscripción pueden describir el mismo hecho.
+
+### Monitor: estadísticas cada 2 segundos
+```json
+{
+  "type": "monitor_stats", "connected": 12, "threads": 30,
+  "queue_size": 0, "msgs_total": 1340, "msgs_per_sec": 21.5,
+  "bytes_total": 480000, "cpu_percent": 12.4, "mem_mb": 58.2
+}
+```
+
+`connected` cuenta usuarios de chat, excluye administradores; `threads` incluye
+todos los hilos activos del proceso y `queue_size` mide la cola de entrada del
+chat. `msgs_total` y `bytes_total` acumulan mensajes autenticados de tipo
+`broadcast`, `private_message` o `file` y sus bytes JSON UTF-8 originales,
+incluidos los que después se rechacen por archivo o destino inválido. No
+cuentan login, registro, suscripción ni envíos del monitor. `msgs_per_sec`
+corresponde al intervalo de muestreo, y los totales comienzan en cero al arrancar.
+
+`cpu_percent` mide CPU del proceso y puede superar 100 si utiliza varios
+núcleos. Con `psutil` opcional, `mem_mb` es RSS actual en MiB; con la biblioteca
+estándar se usa CPU de `time.process_time()` y RSS máximo de `resource.getrusage`.
+En plataformas sin `resource` ni `psutil`, la memoria se informa como 0.
+Las tasas reflejan la última muestra; los demás contadores se consultan al
+crear cada mensaje, por lo que el snapshot no es una transacción global.
+
+Los logs se escriben en consola y en `logs/server.log` relativo a la raíz del
+proyecto. `CHAT_LOG_DIR` permite cambiar ese directorio (usado por las pruebas).
 
 ## Notas para el frontend
 
