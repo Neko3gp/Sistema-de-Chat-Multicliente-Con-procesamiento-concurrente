@@ -176,6 +176,7 @@ def main():
             process = subprocess.Popen(
                 ["timeout", "40s", sys.executable, "-u", "-c", code, str(backend), str(port)],
                 cwd=directory, stdout=log, stderr=log,
+                env={**os.environ, "CHAT_DB_PATH": str(Path(directory) / "chat.db")},
             )
             try:
                 deadline = time.monotonic() + 5

@@ -74,8 +74,14 @@ Si el usuario ya existe:
 
 ### Resultado de login
 ```json
-{ "type": "login_result", "ok": true, "reason": null }
+{ "type": "login_result", "ok": true, "reason": null, "role": "user" }
 ```
+
+El login correcto incluye `role`, con valor `user` o `admin` según la cuenta
+almacenada en SQLite. El registro web crea cuentas `user`; enviar un campo
+`role` desde el cliente no permite elegir privilegios. `reason` conserva su
+valor `null` en respuestas exitosas. El aislamiento del administrador y sus
+mensajes de monitoreo se implementarán en T5.
 
 Si las credenciales no son válidas:
 

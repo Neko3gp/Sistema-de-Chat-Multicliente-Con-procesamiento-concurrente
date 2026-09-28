@@ -63,7 +63,8 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                     _reply(connection, {"type": "error", "reason": "already_connected"})
                     continue
                 username = login_username
-                _reply(connection, {"type": "login_result", "ok": True, "reason": None})
+                _reply(connection, {"type": "login_result", "ok": True, "reason": None,
+                                    "role": database.get_user_role(username)})
                 _broadcast_user_list(connection_manager)
                 continue
 
