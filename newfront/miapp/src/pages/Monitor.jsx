@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiActivity, FiArrowUpRight, FiCpu, FiLogOut, FiPause, FiPlay, FiSearch, FiServer, FiUsers } from "react-icons/fi";
+import { FiActivity, FiArrowUpRight, FiCpu, FiEdit2, FiLogOut, FiPause, FiPlay, FiPlus, FiSearch, FiServer, FiShield, FiTrash2, FiUsers } from "react-icons/fi";
 import { EVENT_LIMIT, eventLabels, formatBytes, formatNumber, formatTime } from "../utils/monitor";
 import "./Monitor.css";
 
@@ -26,11 +26,91 @@ function ActivityChart({ samples }) {
   );
 }
 
-export default function Monitor({ username, monitor, reconnecting, error, onLogout, themePreference, onThemeChange }) {
+function AdminUsersPanel({ users, onCreate, onUpdate, onDelete }) {
+  const emptyForm = { username: "", newUsername: "", password: "", role: "user", avatarUrl: "", description: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState(false);
+
+  function submit(event) {
+    event.preventDefault();
+    if (editing) {
+      onUpdate(form);
+    } else {
+      onCreate({ username: form.username, password: form.password, role: form.role });
+    }
+    setForm(emptyForm);
+    setEditing(false);
+  }
+
+  function edit(user) {
+    setEditing(true);
+    setForm({ ...emptyForm, ...user, newUsername: user.username, password: "" });
+  }
+
+  return (
+    <section className="monitor-admin-grid" aria-label="Administración de usuarios">
+      <form className="monitor-panel monitor-admin-form" onSubmit={submit}>
+        <div className="monitor-panel-heading"><div><h2>{editing ? "Editar usuario" : "Nuevo usuario"}</h2><p>{editing ? "Actualiza rol, perfil o contraseña." : "Crea una cuenta para el chat o el panel."}</p></div><FiUsers aria-hidden="true" /></div>
+        <div className="monitor-form-fields">
+          <label>Nombre de usuario<input value={editing ? form.newUsername : form.username} onChange={(event) => setForm({ ...form, ...(editing ? { newUsername: event.target.value } : { username: event.target.value }) })} required /></label>
+          <label>Contraseña<input type="password" value={form.password} placeholder={editing ? "Sin cambios" : "Obligatoria"} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></label>
+          <label>Rol<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="user">Usuario</option><option value="admin">Administrador</option></select></label>
+          {editing ? <><label>Avatar URL<input value={form.avatarUrl || ""} onChange={(event) => setForm({ ...form, avatarUrl: event.target.value })} /></label><label>Descripción<textarea value={form.description || ""} maxLength={140} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label></> : null}
+        </div>
+        <div className="monitor-form-actions"><button type="submit"><FiPlus aria-hidden="true" />{editing ? "Guardar cambios" : "Crear usuario"}</button>{editing ? <button type="button" onClick={() => { setEditing(false); setForm(emptyForm); }}>Cancelar</button> : null}</div>
+      </form>
+      <section className="monitor-panel monitor-admin-list">
+        <div className="monitor-panel-heading"><div><h2>Cuentas registradas</h2><p>{users.length} cuentas en SQLite</p></div><FiShield aria-hidden="true" /></div>
+        <div className="monitor-admin-table-scroll"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.map((user) => <tr key={user.username}><td><strong>{user.username}</strong><small>{user.description || "Sin descripción"}</small></td><td>{user.role === "admin" ? "Administrador" : "Usuario"}</td><td><span className={user.online ? "monitor-online" : "monitor-offline"}>{user.online ? "En línea" : "Desconectado"}</span></td><td className="monitor-action-cell"><button type="button" title={`Editar ${user.username}`} aria-label={`Editar ${user.username}`} onClick={() => edit(user)}><FiEdit2 /></button><button type="button" title={`Eliminar ${user.username}`} aria-label={`Eliminar ${user.username}`} onClick={() => window.confirm(`¿Eliminar la cuenta ${user.username}?`) && onDelete(user.username)}><FiTrash2 /></button></td></tr>)}</tbody></table></div>
+      </section>
+    </section>
+  );
+}
+
+function AdminGroupsPanel({ users, groups, onCreate, onUpdate, onDelete }) {
+  const emptyForm = { groupId: "", name: "", members: [] };
+  const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState(false);
+  const chatUsers = users.filter((user) => user.role === "user");
+
+  function submit(event) {
+    event.preventDefault();
+    if (editing) onUpdate(form);
+    else onCreate({ name: form.name, members: form.members });
+    setForm(emptyForm);
+    setEditing(false);
+  }
+
+  function toggleMember(username) {
+    const members = form.members.includes(username)
+      ? form.members.filter((member) => member !== username)
+      : [...form.members, username];
+    setForm({ ...form, members });
+  }
+
+  function edit(group) {
+    setEditing(true);
+    setForm({ groupId: group.id, name: group.name, members: group.members || [] });
+  }
+
+  return (
+    <section className="monitor-admin-grid" aria-label="Administración de grupos">
+      <form className="monitor-panel monitor-admin-form" onSubmit={submit}>
+        <div className="monitor-panel-heading"><div><h2>{editing ? "Editar grupo" : "Nuevo grupo"}</h2><p>Administra los integrantes del grupo.</p></div><FiUsers aria-hidden="true" /></div>
+        <div className="monitor-form-fields"><label>Nombre del grupo<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><fieldset><legend>Integrantes</legend>{chatUsers.length ? chatUsers.map((user) => <label className="monitor-check" key={user.username}><input type="checkbox" checked={form.members.includes(user.username)} onChange={() => toggleMember(user.username)} />{user.username}</label>) : <small>No hay usuarios normales registrados.</small>}</fieldset></div>
+        <div className="monitor-form-actions"><button type="submit"><FiPlus aria-hidden="true" />{editing ? "Guardar cambios" : "Crear grupo"}</button>{editing ? <button type="button" onClick={() => { setEditing(false); setForm(emptyForm); }}>Cancelar</button> : null}</div>
+      </form>
+      <section className="monitor-panel monitor-admin-list"><div className="monitor-panel-heading"><div><h2>Grupos registrados</h2><p>{groups.length} grupos persistidos</p></div><FiUsers aria-hidden="true" /></div><div className="monitor-group-list">{groups.map((group) => <article className="monitor-group-row" key={group.id}><div><strong>{group.name}</strong><small>{group.members.length} integrantes · propietario: {group.owner}</small></div><div className="monitor-action-cell"><button type="button" title={`Editar ${group.name}`} aria-label={`Editar ${group.name}`} onClick={() => edit(group)}><FiEdit2 /></button><button type="button" title={`Eliminar ${group.name}`} aria-label={`Eliminar ${group.name}`} onClick={() => window.confirm(`¿Eliminar el grupo ${group.name}?`) && onDelete(group.id)}><FiTrash2 /></button></div></article>)}{groups.length === 0 ? <div className="monitor-empty"><FiUsers /><p>Aún no hay grupos persistidos.</p></div> : null}</div></section>
+    </section>
+  );
+}
+
+export default function Monitor({ username, monitor, reconnecting, error, onLogout, themePreference, onThemeChange, adminUsers, adminGroups, onCreateUser, onUpdateUser, onDeleteUser, onCreateGroup, onUpdateGroup, onDeleteGroup }) {
   const [now, setNow] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [eventType, setEventType] = useState("all");
   const [tab, setTab] = useState("events");
+  const [section, setSection] = useState("monitor");
   const [pausedEvents, setPausedEvents] = useState(null);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 2000);
@@ -75,6 +155,17 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
         {reconnecting || stale ? <div className="monitor-notice" role="status">{reconnecting ? "Se perdió la conexión. Intentando recuperar la sesión automáticamente…" : "No han llegado estadísticas en los últimos 8 segundos."} Los valores visibles corresponden a la última muestra recibida.</div> : null}
         {error && !reconnecting ? <div className="monitor-notice monitor-error" role="alert">{error}</div> : null}
 
+        <nav className="monitor-section-tabs" aria-label="Secciones administrativas">
+          <button type="button" aria-pressed={section === "monitor"} onClick={() => setSection("monitor")}><FiActivity /> Centro de monitoreo</button>
+          <button type="button" aria-pressed={section === "users"} onClick={() => setSection("users")}><FiUsers /> Usuarios</button>
+          <button type="button" aria-pressed={section === "groups"} onClick={() => setSection("groups")}><FiShield /> Grupos de chat</button>
+        </nav>
+
+        {section === "users" ? <AdminUsersPanel users={adminUsers} onCreate={onCreateUser} onUpdate={onUpdateUser} onDelete={onDeleteUser} /> : null}
+        {section === "groups" ? <AdminGroupsPanel users={adminUsers} groups={adminGroups} onCreate={onCreateGroup} onUpdate={onUpdateGroup} onDelete={onDeleteGroup} /> : null}
+
+        {section === "monitor" ? <>
+
         <section className="monitor-metrics" aria-label="Métricas principales">
           {metrics.map(({ label, value, note, icon }) => <article className="monitor-metric" key={label}><div><span>{label}</span><span className="monitor-metric-icon" aria-hidden="true">{icon}</span></div><strong>{value}</strong><small>{note}</small></article>)}
         </section>
@@ -89,6 +180,17 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
               <div><dt>En cola</dt><dd>{formatNumber(stats?.queue_size)}</dd></div>
               <div><dt>Tráfico recibido</dt><dd>{formatBytes(stats?.bytes_total)}</dd></div>
             </dl>
+            <div className="monitor-host-resources">
+              <div className="monitor-host-heading"><div><h3>Recursos del equipo</h3><p>Capacidad disponible y proporción utilizada por el proceso.</p></div><FiCpu aria-hidden="true" /></div>
+              <div className="monitor-host-grid">
+                <div><span>Núcleos disponibles</span><strong>{formatNumber(stats?.cpu_count)}</strong></div>
+                <div><span>CPU del sistema</span><strong>{formatNumber(stats?.system_cpu_percent, 1)}<small> %</small></strong></div>
+                <div><span>Memoria total</span><strong>{formatNumber(stats?.memory_total_mb, 0)}<small> MiB</small></strong></div>
+                <div><span>Memoria disponible</span><strong>{formatNumber(stats?.memory_available_mb, 0)}<small> MiB</small></strong></div>
+                <div><span>Memoria utilizada</span><strong>{formatNumber(stats?.memory_used_mb, 0)}<small> MiB</small></strong></div>
+                <div><span>Uso del proceso</span><strong>{formatNumber(stats?.process_memory_percent, 2)}<small> % RAM</small></strong></div>
+              </div>
+            </div>
           </section>
 
           <section className="monitor-panel monitor-users" aria-labelledby="users-title">
@@ -113,7 +215,8 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
           </div>
           <div className="monitor-log-footer"><span>{tab === "events" ? `${filteredEvents.length} eventos visibles` : `${filteredLog.length} entradas del estado inicial`}</span><span>Máximo {EVENT_LIMIT} entradas · más recientes primero</span></div>
         </section>
-        <footer className="monitor-footer"><span>Actualización de métricas cada 2 s · Los totales se reinician con el servidor.</span><span>Monitor de solo lectura</span></footer>
+        </> : null}
+        <footer className="monitor-footer"><span>Actualización de métricas cada 2 s · Los totales se reinician con el servidor.</span><span>{section === "monitor" ? "Monitor de solo lectura" : "Cambios administrativos protegidos por rol"}</span></footer>
       </main>
     </div>
   );
