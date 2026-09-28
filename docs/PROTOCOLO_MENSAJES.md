@@ -1,6 +1,8 @@
 # Protocolo de mensajes (contrato frontend ↔ backend)
 
-Transporte: **WebSocket** (`ws://<host>:5000`). Todo mensaje es un objeto JSON
+Transporte: **WebSocket** (`ws://<host>:<port>`, puerto predeterminado 5000).
+`--host`/`--port` o `CHAT_HOST`/`CHAT_PORT` configuran la escucha del servidor;
+los argumentos tienen prioridad. Todo mensaje es un objeto JSON
 en texto plano, con un campo `type` obligatorio que indica de qué se trata.
 
 La lectura inicial del handshake tiene un timeout de **10 segundos**. Si expira
@@ -116,7 +118,7 @@ está autenticada.
 ```
 Valores posibles de `reason` (agregar más conforme se necesiten):
 `username_taken`, `invalid_credentials`, `user_not_found`,
-`authentication_required`, `invalid_message`, `message_too_large`, `file_too_large`,
+`authentication_required`, `invalid_message`, `file_too_large`,
 `already_connected`, `forbidden`.
 
 Cada conexión tiene una cola de salida de hasta 1000 mensajes y un escritor
@@ -191,12 +193,12 @@ proyecto. `CHAT_LOG_DIR` permite cambiar ese directorio (usado por las pruebas).
 ## Notas para el frontend
 
 - Todo el ciclo de vida se maneja con un solo `WebSocket` abierto por sesión
-  (ver `frontend/src/services/socket.js`).
+  (ver `newfront/miapp/src/services/socket.js`).
 - No hay que reconectar entre mensajes: se registra o inicia sesión usando el
   mismo socket y, solo después de un `login_result` exitoso, se envían mensajes
   de chat.
 - Los mensajes `broadcast`, `private_message` y `file` requieren autenticación.
-- Los tamaños máximos y las validaciones de campos se implementarán en el
-  backend y deben reflejarse aquí cuando queden definidos.
+- El límite implementado de archivos es 5 MiB decodificados; la conexión se
+  cierra si su cola de salida de 1000 mensajes se llena.
 - Cualquier campo nuevo que se necesite (por ejemplo para salas privadas a
   futuro) debe agregarse aquí primero para que ambos lados sepan qué esperar.
