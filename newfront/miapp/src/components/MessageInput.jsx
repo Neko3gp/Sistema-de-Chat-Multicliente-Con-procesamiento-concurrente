@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { FiFile, FiImage, FiMusic, FiPaperclip, FiX } from "react-icons/fi";
+import EmojiPicker, { Theme } from "emoji-picker-react";
+import { FiFile, FiImage, FiMusic, FiPaperclip, FiSend, FiSmile, FiX } from "react-icons/fi";
 import { getFileKind } from "../utils/files";
 
 const FILE_TYPES = {
@@ -35,6 +36,11 @@ function shortenFileName(name, max = 28) {
   return `${base.slice(0, keep)}…${ext}`;
 }
 
+function resolveEmojiTheme() {
+  const value = document.documentElement.getAttribute("data-theme") || "";
+  return value.includes("light") ? Theme.LIGHT : Theme.DARK;
+}
+
 export default function MessageInput({
   selectedUser,
   selectedGroupId = null,
@@ -47,8 +53,12 @@ export default function MessageInput({
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [emojiTheme, setEmojiTheme] = useState(resolveEmojiTheme);
   const [selectedType, setSelectedType] = useState("image");
   const fileRef = useRef(null);
+  const textRef = useRef(null);
+  const caretRef = useRef(0);
   const typingActiveRef = useRef(false);
   const typingTimerRef = useRef(null);
 
@@ -63,9 +73,15 @@ export default function MessageInput({
     typingTimerRef.current = setTimeout(() => setTyping(false), 1800);
   }
 
-  function handleTextChange(event) {
-    const value = event.target.value;
+  function rememberCaret() {
+    const input = textRef.current;
+    if (!input) return;
+    caretRef.current = input.selectionStart ?? text.length;
+  }
+
+  function applyText(value, caret = null) {
     setText(value);
+    if (caret != null) caretRef.current = caret;
     if (value.trim()) {
       setTyping(true);
       stopTypingSoon();
@@ -73,6 +89,18 @@ export default function MessageInput({
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       setTyping(false);
     }
+  }
+
+  function handleTextChange(event) {
+    const value = event.target.value;
+    applyText(value, event.target.selectionStart ?? value.length);
+  }
+
+  function insertEmoji(emoji) {
+    const start = caretRef.current ?? text.length;
+    const next = `${text.slice(0, start)}${emoji}${text.slice(start)}`;
+    const caret = start + emoji.length;
+    applyText(next, caret);
   }
 
   useEffect(() => {
@@ -86,11 +114,28 @@ export default function MessageInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUser, selectedGroupId]);
 
+  useEffect(() => {
+    setEmojiOpen(false);
+    setPickerOpen(false);
+  }, [selectedUser, selectedGroupId]);
+
+  useEffect(() => {
+    const sync = () => setEmojiTheme(resolveEmojiTheme());
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     setTyping(false);
+    setEmojiOpen(false);
 
     if (pendingFile) {
       setSending(true);
@@ -137,6 +182,7 @@ export default function MessageInput({
     }
 
     setPendingFile(file);
+    setEmojiOpen(false);
   }
 
   function clearFile() {
@@ -160,8 +206,13 @@ export default function MessageInput({
       ? `Mensaje privado a ${selectedUser}...`
       : "Mensaje para todos...";
 
+  const emojiKeyboardOpen = emojiOpen && !pendingFile;
+
   return (
-    <form className="message-input" onSubmit={handleSubmit}>
+    <form
+      className={emojiKeyboardOpen ? "message-input emoji-keyboard-open" : "message-input"}
+      onSubmit={handleSubmit}
+    >
       <input
         ref={fileRef}
         className="file-picker"
@@ -197,7 +248,10 @@ export default function MessageInput({
             className="attach-btn"
             title="Adjuntar archivo"
             aria-label="Adjuntar archivo"
-            onClick={() => setPickerOpen((open) => !open)}
+            onClick={() => {
+              setEmojiOpen(false);
+              setPickerOpen((open) => !open);
+            }}
             disabled={sending}
           >
             <FiPaperclip size={20} aria-hidden="true" />
@@ -219,17 +273,25 @@ export default function MessageInput({
             </div>
           ) : (
             <input
+              ref={textRef}
               type="text"
               value={text}
               onChange={handleTextChange}
+              onSelect={rememberCaret}
+              onClick={rememberCaret}
+              onKeyUp={rememberCaret}
               placeholder={placeholder}
               disabled={sending}
+              inputMode={emojiKeyboardOpen ? "none" : "text"}
               onFocus={() => {
                 setPickerOpen(false);
+                setEmojiOpen(false);
+                rememberCaret();
                 window.scrollTo(0, 0);
                 requestAnimationFrame(() => window.scrollTo(0, 0));
               }}
               onBlur={() => {
+                rememberCaret();
                 if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
                 setTyping(false);
               }}
@@ -238,10 +300,55 @@ export default function MessageInput({
           {error ? <p className="input-error">{error}</p> : null}
         </div>
 
-        <button type="submit" disabled={sending || (!text.trim() && !pendingFile)}>
-          {sending ? "..." : "Enviar"}
+        <button
+          type="button"
+          className={`attach-btn emoji-toggle${emojiOpen ? " active" : ""}`}
+          title={emojiOpen ? "Cerrar emojis" : "Emojis"}
+          aria-label={emojiOpen ? "Cerrar teclado de emojis" : "Abrir teclado de emojis"}
+          aria-pressed={emojiOpen}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            setPickerOpen(false);
+            setEmojiOpen((open) => {
+              const next = !open;
+              if (next) {
+                textRef.current?.blur();
+              } else {
+                textRef.current?.focus();
+              }
+              return next;
+            });
+          }}
+          disabled={sending || Boolean(pendingFile)}
+        >
+          <FiSmile size={20} aria-hidden="true" />
+        </button>
+
+        <button
+          type="submit"
+          className="send-btn"
+          title="Enviar"
+          aria-label="Enviar"
+          disabled={sending || (!text.trim() && !pendingFile)}
+        >
+          <FiSend size={20} aria-hidden="true" />
         </button>
       </div>
+
+      {emojiKeyboardOpen ? (
+        <div className="emoji-picker-wrap" aria-label="Teclado de emojis">
+          <EmojiPicker
+            theme={emojiTheme}
+            width="100%"
+            height={280}
+            searchPlaceHolder="Buscar emoji"
+            previewConfig={{ showPreview: false }}
+            skinTonesDisabled
+            lazyLoadEmojis
+            onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
+          />
+        </div>
+      ) : null}
     </form>
   );
 }

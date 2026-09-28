@@ -1,6 +1,16 @@
 import { getInitials, getNameColor } from "../utils/avatar";
 import MessageStatus from "./MessageStatus";
 
+function isEmojiHeavy(text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  const withoutEmoji = value
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/[\uFE0F\u200D]/g, "")
+    .trim();
+  return withoutEmoji.length === 0 && [...value].length <= 8;
+}
+
 export default function Message({ message, currentUser, avatarUrl = "" }) {
   const mine = message.from === currentUser;
   const isPrivate = message.type === "private_message";
@@ -8,6 +18,7 @@ export default function Message({ message, currentUser, avatarUrl = "" }) {
     message.type === "broadcast" || message.type === "group_message";
   const author = message.from || "sistema";
   const authorColor = getNameColor(author);
+  const emojiHeavy = isEmojiHeavy(message.message);
   const time = new Date(message.at || Date.now()).toLocaleTimeString("es-MX", {
     hour: "numeric",
     minute: "2-digit",
@@ -42,7 +53,9 @@ export default function Message({ message, currentUser, avatarUrl = "" }) {
           </header>
         ) : null}
 
-        <p className="bubble-text">{message.message}</p>
+        <p className={emojiHeavy ? "bubble-text emoji-heavy" : "bubble-text"}>
+          {message.message}
+        </p>
         <footer className="bubble-meta">
           <time>{time}</time>
           <MessageStatus status={message.status} mine={mine} />

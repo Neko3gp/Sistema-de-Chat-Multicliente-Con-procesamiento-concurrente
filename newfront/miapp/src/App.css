@@ -1349,6 +1349,11 @@
   word-break: break-word;
 }
 
+.bubble-text.emoji-heavy {
+  font-size: 1.85rem;
+  line-height: 1.25;
+}
+
 .bubble-meta {
   display: flex;
   justify-content: flex-end;
@@ -1604,7 +1609,7 @@
 
 .message-input-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
@@ -1614,18 +1619,31 @@
 .attach-wrap {
   position: relative;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .attach-btn {
   width: 44px;
   height: 44px;
+  min-width: 44px;
+  padding: 0;
+  margin: 0;
   border: 1px solid var(--glass-border-soft);
   border-radius: 999px;
   background: var(--glass-bg-soft);
   color: var(--color-text);
   cursor: pointer;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  box-sizing: border-box;
+}
+
+.attach-btn svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .attach-btn:disabled {
@@ -1670,6 +1688,51 @@
 
 .file-type-menu button:hover,
 .file-type-menu button.active {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.message-input.emoji-keyboard-open {
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+  gap: 10px;
+}
+
+.emoji-picker-wrap {
+  width: calc(100% + 32px);
+  margin: 0 -16px;
+  min-width: 0;
+  max-height: min(42vh, 320px);
+  overflow: hidden;
+  border: none;
+  border-top: 1px solid var(--glass-border-soft);
+  border-radius: 0;
+  background: var(--color-surface, var(--glass-bg));
+  animation: emoji-keyboard-in 0.18s ease-out;
+}
+
+.emoji-picker-wrap .EmojiPickerReact {
+  --epr-emoji-size: 1.5rem;
+  --epr-header-padding: 8px 10px;
+  --epr-search-input-border-radius: 999px;
+  --epr-category-navigation-button-size: 28px;
+  --epr-bg-color: transparent;
+  border: none !important;
+  width: 100% !important;
+  height: min(42vh, 320px) !important;
+}
+
+@keyframes emoji-keyboard-in {
+  from {
+    opacity: 0.55;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.attach-btn.emoji-toggle.active {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--glass-border-soft));
   background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
@@ -1775,13 +1838,30 @@
   font-size: 0.75rem;
 }
 
-.message-input-row > button[type="submit"] {
+.message-input-row > button[type="submit"].send-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  margin: 0;
   border-radius: 999px;
-  padding: 12px 18px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  font-size: 0;
+  box-sizing: border-box;
 }
 
-.message-input-row > button[type="submit"]:disabled {
+.message-input-row > button[type="submit"].send-btn svg {
+  display: block;
+  flex-shrink: 0;
+  /* Compensa el sesgo visual del avión de FiSend */
+  transform: translate(1px, 0.5px);
+}
+
+.message-input-row > button[type="submit"].send-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
