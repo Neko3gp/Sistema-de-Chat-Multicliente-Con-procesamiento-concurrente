@@ -133,7 +133,8 @@ class MonitorHub:
         self._sample()
         while not self._stop.wait(2):
             self._sample()
-            self.publish({"type": "monitor_stats", **self.stats()})
+            self.publish({"type": "monitor_stats", **self.stats(),
+                          "users": self.connections.all_usernames()})
 
     def stop(self):
         """Desconecta el publicador y detiene los dos hilos propios del monitor."""

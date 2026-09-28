@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import GroupInfo from "./pages/GroupInfo";
+import Monitor from "./pages/Monitor";
+import { initialMonitorState, monitorReducer } from "./utils/monitor";
 import {
   connectSocket,
   registerUser,
@@ -127,10 +129,12 @@ export default function App() {
   const [success, setSuccess] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [monitor, dispatchMonitor] = useReducer(monitorReducer, initialMonitorState);
 
   const usernameRef = useRef("");
   const passwordRef = useRef("");
   const authenticatedRef = useRef(false);
+  const roleRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const intentionalCloseRef = useRef(false);
   const messageHandlerRef = useRef(null);
@@ -184,7 +188,9 @@ export default function App() {
     setReconnecting(true);
     setError("Reconectando…");
     reconnectTimerRef.current = setTimeout(() => {
-      const session = loadSession();
+      const session = roleRef.current === "admin"
+        ? { username: usernameRef.current, password: passwordRef.current }
+        : loadSession();
       if (!session) {
         setReconnecting(false);
         resetSession("La sesión expiró. Vuelve a iniciar sesión.");
@@ -593,6 +599,9 @@ export default function App() {
     setReconnecting(false);
     clearSession();
     setAuthenticated(false);
+    authenticatedRef.current = false;
+    roleRef.current = null;
+    dispatchMonitor({ type: "reset" });
     setView("login");
     setUsername("");
     usernameRef.current = "";
@@ -626,18 +635,19 @@ export default function App() {
       case "login_result":
         if (message.ok) {
           if (message.role === "admin") {
-            intentionalCloseRef.current = true;
-            disconnectSocket({ silent: true });
+            roleRef.current = "admin";
+            authenticatedRef.current = true;
             clearSession();
-            setError(
-              "La cuenta admin es solo para el monitor (usa el cliente de consola).",
-            );
-            setAuthenticated(false);
+            clearReconnectTimer();
+            setError("");
+            setSuccess("");
+            setAuthenticated(true);
             setReconnecting(false);
-            setView("login");
+            setView("monitor");
             return;
           }
 
+          roleRef.current = "user";
           const wasAuthenticated = authenticatedRef.current;
           const local = loadLocalProfile(usernameRef.current) || {};
           const nextDescription =
@@ -689,11 +699,22 @@ export default function App() {
             });
           }
         } else {
+          clearReconnectTimer();
+          roleRef.current = null;
+          authenticatedRef.current = false;
+          dispatchMonitor({ type: "reset" });
           setReconnecting(false);
           clearSession();
           setError(mapServerReason(message.reason || "invalid_credentials"));
           setAuthenticated(false);
           setView("login");
+        }
+        break;
+      case "monitor_snapshot":
+      case "monitor_event":
+      case "monitor_stats":
+        if (roleRef.current === "admin") {
+          dispatchMonitor({ ...message, receivedAt: Date.now() });
         }
         break;
       case "register_result":
@@ -847,7 +868,7 @@ export default function App() {
           intentionalCloseRef.current = false;
           break;
         }
-        if (authenticatedRef.current && loadSession()) {
+        if (authenticatedRef.current && (roleRef.current === "admin" || loadSession())) {
           scheduleReconnect();
         } else if (authenticatedRef.current) {
           resetSession(mapServerReason("connection_closed"));
@@ -858,7 +879,7 @@ export default function App() {
           (message.reason === "connection_failed" ||
             message.reason === "already_connected") &&
           authenticatedRef.current &&
-          loadSession()
+          (roleRef.current === "admin" || loadSession())
         ) {
           scheduleReconnect(message.reason === "already_connected" ? 2500 : 1500);
           break;
@@ -1022,6 +1043,20 @@ export default function App() {
     clearReconnectTimer();
     disconnectSocket({ silent: true });
     resetSession("");
+  }
+
+  if (authenticated && view === "monitor") {
+    return (
+      <Monitor
+        username={username}
+        monitor={monitor}
+        reconnecting={reconnecting}
+        error={error}
+        onLogout={handleLogout}
+        themePreference={themePreference}
+        onThemeChange={handleThemeChange}
+      />
+    );
   }
 
   if (inApp) {
