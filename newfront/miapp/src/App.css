@@ -1145,6 +1145,32 @@
   margin-bottom: 4px;
 }
 
+.typing-avatar-stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.typing-avatar-stack.is-multi .typing-stack-avatar {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-bg) 70%, var(--color-surface));
+}
+
+.typing-avatar-stack.is-multi .typing-stack-avatar + .typing-stack-avatar {
+  margin-left: -12px;
+}
+
+.typing-stack-avatar {
+  position: relative;
+}
+
+.typing-stack-extra {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
 .typing-bubble-dots {
   display: inline-flex;
   align-items: center;

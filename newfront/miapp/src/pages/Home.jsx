@@ -12,20 +12,23 @@ function filterMessages(messages, username, selectedUser, selectedGroupId) {
   return messages.filter((message) => {
     if (selectedGroupId) {
       return (
-        (message.type === "group_message" || message.type === "group_notice") &&
-        message.groupId === selectedGroupId
+        ((message.type === "group_message" ||
+          message.type === "group_notice" ||
+          message.type === "file") &&
+          message.groupId === selectedGroupId)
       );
     }
 
     if (selectedUser === null) {
       return (
         message.type === "broadcast" ||
-        (message.type === "file" && !message.to)
+        (message.type === "file" && !message.to && !message.groupId)
       );
     }
 
     return (
-      (message.type === "private_message" || message.type === "file") &&
+      (message.type === "private_message" ||
+        (message.type === "file" && !message.groupId)) &&
       ((message.from === selectedUser &&
         (message.to === username || !message.to)) ||
         (message.from === username && message.to === selectedUser))
@@ -273,14 +276,13 @@ export default function Home({
                   />
                 ),
               )}
-              {typingNames.map((name) => (
+              {typingNames.length > 0 ? (
                 <TypingBubble
-                  key={`typing-${name}`}
-                  from={name}
-                  avatarUrl={contacts[name]?.avatarUrl || ""}
+                  names={typingNames}
+                  contacts={contacts}
                   showAuthor={showAuthorOnTyping}
                 />
-              ))}
+              ) : null}
               <div ref={messagesEndRef} />
             </>
           )}

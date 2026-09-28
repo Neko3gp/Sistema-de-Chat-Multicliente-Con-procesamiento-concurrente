@@ -184,19 +184,23 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 is_typing = bool(message.get("isTyping"))
                 group_id = message.get("groupId")
                 if isinstance(group_id, str) and group_id.strip():
+                    gid = group_id.strip()
                     payload = {
                         "type": "typing",
                         "from": username,
-                        "groupId": group_id.strip(),
+                        "groupId": gid,
                         "isTyping": is_typing,
                     }
                     members = message.get("members")
-                    if not isinstance(members, list):
+                    stored = database.get_group(gid)
+                    if stored and isinstance(stored.get("members"), list) and stored["members"]:
+                        members = stored["members"]
+                    elif not isinstance(members, list):
                         members = []
                     for name in members:
-                        if not isinstance(name, str) or name == username:
+                        if not isinstance(name, str) or name.strip() == username:
                             continue
-                        target = connection_manager.get(name)
+                        target = connection_manager.get(name.strip())
                         if target:
                             target.send(payload)
                 else:
@@ -348,6 +352,52 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 if file_error:
                     _reply(connection, {"type": "error", "reason": file_error})
                     continue
+                group_id = message.get("groupId")
+                if group_id:
+                    members = message.get("members")
+                    group_name = message.get("groupName") or ""
+                    filename = message.get("filename")
+                    if (
+                        not isinstance(members, list)
+                        or not isinstance(group_id, str)
+                        or not group_id.strip()
+                        or not isinstance(filename, str)
+                        or not filename.strip()
+                    ):
+                        _reply(connection, {"type": "error", "reason": "invalid_message"})
+                        continue
+                    cleaned = []
+                    for name in members:
+                        if isinstance(name, str) and name.strip() and name != username:
+                            cleaned.append(name.strip())
+                    unique_members = list(dict.fromkeys([username, *cleaned]))
+                    if len(unique_members) < 2:
+                        _reply(connection, {"type": "error", "reason": "invalid_message"})
+                        continue
+                    payload = {
+                        "type": "file",
+                        "from": username,
+                        "groupId": group_id.strip(),
+                        "groupName": group_name if isinstance(group_name, str) else "",
+                        "members": unique_members,
+                        "filename": filename.strip(),
+                        "data": message.get("data"),
+                    }
+                    mime = message.get("mimeType")
+                    if isinstance(mime, str) and mime.strip():
+                        payload["mimeType"] = mime.strip()
+                    if database.get_group(group_id.strip()) is None:
+                        database.save_group(
+                            group_id.strip(), group_name or "Grupo", username, unique_members,
+                        )
+                    message_queue.put(
+                        {"message": payload, "connection_manager": connection_manager}
+                    )
+                    continue
+                # Archivo privado o de sala general: sin metadatos de grupo.
+                message.pop("groupId", None)
+                message.pop("groupName", None)
+                message.pop("members", None)
             message["from"] = username
             message_queue.put({"message": message, "connection_manager": connection_manager})
 
@@ -429,25 +479,46 @@ def process_message(item):
         )
 
     elif msg_type == "file":
-        # Sin "to": archivo de sala general (broadcast). Con "to": privado.
-        destination = message.get("to")
-        if not destination:
-            count = cm.broadcast(message, exclude=message.get("from"))
+        group_id = message.get("groupId")
+        if group_id:
+            # Archivo de grupo: mismo fan-out que group_message.
+            sender_name = message.get("from")
+            members = message.get("members") or []
+            delivered = 0
+            for name in members:
+                if name == sender_name:
+                    continue
+                target = cm.get(name)
+                if target:
+                    target.send(message)
+                    delivered += 1
             log_event(
                 "file",
-                message.get("from"),
-                to=None,
+                sender_name,
+                groupId=group_id,
                 filename=message.get("filename"),
-                recipients=count,
+                delivered=delivered,
             )
         else:
-            target = cm.get(destination)
-            if target:
-                target.send(message)
-            elif database.get_user_role(destination) is None:
-                sender = cm.get(message.get("from"))
-                if sender:
-                    _reply(sender, {"type": "error", "reason": "user_not_found"})
+            # Sin "to": archivo de sala general (broadcast). Con "to": privado.
+            destination = message.get("to")
+            if not destination:
+                count = cm.broadcast(message, exclude=message.get("from"))
+                log_event(
+                    "file",
+                    message.get("from"),
+                    to=None,
+                    filename=message.get("filename"),
+                    recipients=count,
+                )
+            else:
+                target = cm.get(destination)
+                if target:
+                    target.send(message)
+                elif database.get_user_role(destination) is None:
+                    sender = cm.get(message.get("from"))
+                    if sender:
+                        _reply(sender, {"type": "error", "reason": "user_not_found"})
 
 
 def _handle_admin_request(connection, connection_manager, msg_type, message):

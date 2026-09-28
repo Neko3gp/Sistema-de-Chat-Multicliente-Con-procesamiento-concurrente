@@ -12,14 +12,16 @@ export function chatKey(selectedUser, selectedGroupId = null) {
 
 export function messageChatKey(message, me) {
   if (
-    (message.type === "group_message" || message.type === "group_notice") &&
+    (message.type === "group_message" ||
+      message.type === "group_notice" ||
+      (message.type === "file" && message.groupId)) &&
     message.groupId
   ) {
     return `__group__:${message.groupId}`;
   }
   if (
     message.type === "broadcast" ||
-    (message.type === "file" && !message.to)
+    (message.type === "file" && !message.to && !message.groupId)
   ) {
     return "__broadcast__";
   }

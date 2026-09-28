@@ -125,7 +125,13 @@ function hydrateHistory(history, owner) {
   const chatUsers = new Set();
   const contacts = {};
   for (const message of messages) {
-    if (message.type === "group_message") continue;
+    if (
+      message.type === "group_message" ||
+      message.type === "group_notice" ||
+      (message.type === "file" && message.groupId)
+    ) {
+      continue;
+    }
     const peer = message.from === owner ? message.to : message.from;
     if (!peer || peer === owner) continue;
     chatUsers.add(peer);
@@ -489,7 +495,9 @@ export default function App() {
   function handleTyping(isTyping) {
     if (!isSocketOpen()) return;
     if (selectedGroupId) {
-      const group = customGroups.find((item) => item.id === selectedGroupId);
+      const group =
+        customGroupsRef.current.find((item) => item.id === selectedGroupId) ||
+        customGroups.find((item) => item.id === selectedGroupId);
       sendTyping({
         isTyping,
         groupId: selectedGroupId,
@@ -570,7 +578,14 @@ export default function App() {
   }
 
   function ensureCustomGroupFromMessage(message) {
-    if (message.type !== "group_message" || !message.groupId) return;
+    if (!message.groupId) return;
+    if (
+      message.type !== "group_message" &&
+      message.type !== "group_notice" &&
+      !(message.type === "file" && message.groupId)
+    ) {
+      return;
+    }
     upsertCustomGroup({
       id: message.groupId,
       name: message.groupName || "Grupo",
@@ -1270,12 +1285,10 @@ export default function App() {
         for (const restoredMessage of restored.messages) {
           if (
             restoredMessage.type === "group_message" ||
-            restoredMessage.type === "group_notice"
+            restoredMessage.type === "group_notice" ||
+            (restoredMessage.type === "file" && restoredMessage.groupId)
           ) {
-            ensureCustomGroupFromMessage({
-              ...restoredMessage,
-              type: "group_message",
-            });
+            ensureCustomGroupFromMessage(restoredMessage);
           }
         }
         // Mensajes llegados offline → mismos avisos que estando en línea sin abrir el chat.
@@ -1347,15 +1360,20 @@ export default function App() {
       case "file":
       case "group_message":
       case "group_notice":
-        if (message.type === "group_message" || message.type === "group_notice") {
-          ensureCustomGroupFromMessage({
-            ...message,
-            type: "group_message",
-          });
+        if (
+          message.type === "group_message" ||
+          message.type === "group_notice" ||
+          (message.type === "file" && message.groupId)
+        ) {
+          ensureCustomGroupFromMessage(message);
         }
         if (message.from && message.from !== usernameRef.current) {
           ensureContact(message.from);
-          if (message.type !== "group_message" && message.type !== "group_notice") {
+          const isGroupScoped =
+            message.type === "group_message" ||
+            message.type === "group_notice" ||
+            (message.type === "file" && message.groupId);
+          if (!isGroupScoped) {
             setChatUsers((prev) =>
               prev.includes(message.from) ? prev : [...prev, message.from],
             );
@@ -1370,10 +1388,14 @@ export default function App() {
             applyRemoteTyping({
               from: message.from,
               isTyping: false,
-              groupId: message.type === "group_message" ? message.groupId : null,
+              groupId:
+                message.type === "group_message" ||
+                (message.type === "file" && message.groupId)
+                  ? message.groupId
+                  : null,
               chat:
                 message.type === "broadcast" ||
-                (message.type === "file" && !message.to)
+                (message.type === "file" && !message.to && !message.groupId)
                   ? null
                   : message.from,
             });
@@ -1406,14 +1428,15 @@ export default function App() {
             if (message.chat == null) {
               if (
                 item.type === "broadcast" ||
-                (item.type === "file" && !item.to)
+                (item.type === "file" && !item.to && !item.groupId)
               ) {
                 return { ...item, status: "seen" };
               }
               return item;
             }
             if (
-              (item.type === "private_message" || item.type === "file") &&
+              (item.type === "private_message" ||
+                (item.type === "file" && !item.groupId)) &&
               item.to === reader
             ) {
               return { ...item, status: "seen" };
@@ -1555,31 +1578,55 @@ export default function App() {
   }
 
   async function handleSendFile(file) {
-    if (selectedGroupId) {
-      throw new Error("Los archivos en grupos aún no están disponibles");
-    }
-
     const data = await fileToBase64(file);
     const id = createMessageId();
     const open = isSocketOpen();
-    const recipientOnline = selectedUser ? users.includes(selectedUser) : true;
-    const payload = {
-      id,
-      type: "file",
-      from: username,
-      to: selectedUser || null,
-      filename: file.name,
-      mimeType: file.type || undefined,
-      data,
-      at: new Date(),
-      status: selectedUser
-        ? outgoingPrivateStatus(open, recipientOnline)
-        : outgoingSharedStatus(open),
-    };
+    const activeGroup = selectedGroupId
+      ? customGroups.find((group) => group.id === selectedGroupId)
+      : null;
 
-    if (open) {
-      sendFile(selectedUser || null, file.name, data, file.type || "");
+    let payload;
+    if (activeGroup) {
+      payload = {
+        id,
+        type: "file",
+        from: username,
+        groupId: activeGroup.id,
+        groupName: activeGroup.name,
+        members: activeGroup.members || [],
+        filename: file.name,
+        mimeType: file.type || undefined,
+        data,
+        at: new Date(),
+        status: outgoingSharedStatus(open),
+      };
+      if (open) {
+        sendFile(null, file.name, data, file.type || "", {
+          groupId: activeGroup.id,
+          groupName: activeGroup.name,
+          members: activeGroup.members || [],
+        });
+      }
+    } else {
+      const recipientOnline = selectedUser ? users.includes(selectedUser) : true;
+      payload = {
+        id,
+        type: "file",
+        from: username,
+        to: selectedUser || null,
+        filename: file.name,
+        mimeType: file.type || undefined,
+        data,
+        at: new Date(),
+        status: selectedUser
+          ? outgoingPrivateStatus(open, recipientOnline)
+          : outgoingSharedStatus(open),
+      };
+      if (open) {
+        sendFile(selectedUser || null, file.name, data, file.type || "");
+      }
     }
+
     setMessages((prev) => [...prev, payload]);
   }
 

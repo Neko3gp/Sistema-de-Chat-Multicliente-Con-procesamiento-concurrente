@@ -91,10 +91,16 @@ export function sendPrivateMessage(to, text) {
   socket?.send(JSON.stringify({ type: "private_message", to, message: text }));
 }
 
-export function sendFile(to, filename, data, mimeType = "") {
+export function sendFile(to, filename, data, mimeType = "", group = null) {
   const payload = { type: "file", filename, data };
-  if (to) payload.to = to;
   if (mimeType) payload.mimeType = mimeType;
+  if (group?.groupId) {
+    payload.groupId = group.groupId;
+    payload.groupName = group.groupName || "";
+    payload.members = Array.isArray(group.members) ? group.members : [];
+  } else if (to) {
+    payload.to = to;
+  }
   socket?.send(JSON.stringify(payload));
 }
 

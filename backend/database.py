@@ -541,6 +541,10 @@ def get_chat_history(username, limit=HISTORY_LIMIT):
             if not isinstance(members, list) or username not in members:
                 # Avisos de expulsión: el saliente ya no está en members; no se rehidrata aquí.
                 continue
+        elif message_type == "file" and group_id is not None:
+            members = message.get("members")
+            if not isinstance(members, list) or username not in members:
+                continue
         elif message_type == "file" and group_id is None:
             if recipient not in (None, username) and sender != username:
                 continue

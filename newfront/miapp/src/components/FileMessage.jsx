@@ -9,7 +9,7 @@ import FilePreview from "./FilePreview";
 export default function FileMessage({ message, currentUser, avatarUrl = "" }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const mine = message.from === currentUser;
-  const isGroup = !message.to;
+  const isGroup = Boolean(message.groupId) || !message.to;
   const author = message.from || "sistema";
   const authorColor = getNameColor(author);
   const filename = message.filename || "archivo";

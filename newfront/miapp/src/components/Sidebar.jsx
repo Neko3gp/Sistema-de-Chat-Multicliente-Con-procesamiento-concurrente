@@ -72,7 +72,11 @@ export default function Sidebar({
       ...chatUsers,
       ...users,
       ...messages
-        .filter((message) => message.type === "private_message" || message.type === "file")
+        .filter(
+          (message) =>
+            message.type === "private_message" ||
+            (message.type === "file" && !message.groupId && message.to),
+        )
         .flatMap((message) => [message.from, message.to])
         .filter(Boolean),
     ]),
@@ -108,17 +112,20 @@ export default function Sidebar({
       if (entry.isBroadcast) {
         return (
           message.type === "broadcast" ||
-          (message.type === "file" && !message.to)
+          (message.type === "file" && !message.to && !message.groupId)
         );
       }
       if (entry.isGroup) {
         return (
-          (message.type === "group_message" || message.type === "group_notice") &&
+          (message.type === "group_message" ||
+            message.type === "group_notice" ||
+            message.type === "file") &&
           message.groupId === entry.id
         );
       }
       return (
-        (message.type === "private_message" || message.type === "file") &&
+        (message.type === "private_message" ||
+          (message.type === "file" && !message.groupId)) &&
         (message.from === entry.id || message.to === entry.id)
       );
     });
