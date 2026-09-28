@@ -4,11 +4,10 @@ import logging
 import queue
 import socket
 import threading
+import time
 
 from websocket_handler import send_frame
-
-
-logger = logging.getLogger(__name__)
+from server_log import log_event
 
 
 class Connection:
@@ -47,7 +46,7 @@ class Connection:
                 return True
             except queue.Full:
                 pass
-        logger.warning("Cola de salida llena para %s", self.username)
+        log_event("error", self.username, level=logging.WARNING, reason="outgoing_queue_full")
         self.close("cliente demasiado lento")
         return False
 
@@ -59,11 +58,20 @@ class Connection:
                 try:
                     if message is None:
                         return
+                    started = time.monotonic()
                     send_frame(self.socket, json.dumps(message))
+                    if message.get("type") == "file":
+                        data = message["data"]
+                        size = len(data.rstrip("=")) * 6 // 8
+                        log_event("file", message.get("from"), to=self.username,
+                                  filename=message.get("filename"), bytes=size,
+                                  duration_ms=round((time.monotonic() - started) * 1000, 3))
                 finally:
                     self._outgoing.task_done()
-        except (OSError, TypeError, ValueError):
-            logger.exception("Error en escritor de %s", self.username)
+        except (OSError, TypeError, ValueError) as error:
+            if not self._closed:
+                log_event("error", self.username, level=logging.ERROR,
+                          reason="writer_failed", exception=type(error).__name__)
             self.close("error de escritura")
 
     def close(self, reason="desconexión del cliente"):
@@ -86,7 +94,7 @@ class Connection:
             except OSError:
                 pass
             self.socket.close()
-        logger.info("Conexión cerrada: usuario=%s motivo=%s", self.username, reason)
+        log_event("disconnect", self.username, reason=reason)
         if self.username and self.manager.remove(self.username, self):
             self.manager.broadcast({"type": "user_list", "users": self.manager.all_usernames()})
 
@@ -136,3 +144,4 @@ class ConnectionManager:
             targets = [conn for user, conn in self._clients.items() if user != exclude]
         for connection in targets:
             connection.send(message)
+        return len(targets)

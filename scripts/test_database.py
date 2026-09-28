@@ -88,6 +88,7 @@ def main():
     """Ejecuta la verificación aislada y elimina el servidor y los datos."""
     with tempfile.TemporaryDirectory(prefix="chat-t3-") as directory:
         env = {**os.environ, "CHAT_DB_PATH": str(Path(directory) / "chat.db"),
+               "CHAT_LOG_DIR": str(Path(directory) / "logs"),
                "CHAT_ADMIN_PASSWORD": "admin-T3-temporal"}
         prepare(directory, env)
         with socket.socket() as probe:
