@@ -11,6 +11,25 @@ import sys
 logger = logging.getLogger("chat.server")
 
 
+def message_metadata(message):
+    """Describe el transporte sin incluir texto, contraseñas ni contenido base64."""
+    kind = message.get("type")
+    detail = {"message_type": kind, "to": message.get("to"),
+              "scope": "group" if message.get("groupId") else
+              "private" if message.get("to") else "general"}
+    if kind == "file":
+        name = str(message.get("filename") or "")
+        mime = str(message.get("mimeType") or "").lower()
+        extension = Path(name.lower()).suffix
+        category = "document"
+        if mime.startswith("image/") or extension in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}:
+            category = "image"
+        elif mime.startswith("audio/") or extension in {".mp3", ".m4a", ".wav", ".ogg", ".aac", ".webm"}:
+            category = "audio"
+        detail.update(file_kind=category, filename=name)
+    return detail
+
+
 class RecentLogHandler(logging.Handler):
     """Conserva copias estructuradas del log para el snapshot del monitor."""
 

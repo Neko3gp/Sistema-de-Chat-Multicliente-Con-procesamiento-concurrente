@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import socket
+import shlex
 import subprocess
 import sys
 import time
@@ -111,6 +112,11 @@ def free_port(port: int) -> None:
 
 def main() -> None:
     print("=== Setup inicial del chat ===\n")
+    # Las terminales nuevas no heredan la activación del virtualenv.
+    local_python = ROOT / ".venv" / "bin" / "python"
+    backend_python = str(local_python) if local_python.exists() else sys.executable
+    subprocess.check_call([backend_python, "-m", "pip", "install", "-r",
+                           str(SCRIPTS / "requirements.txt")])
 
     deleted = clear_history()
     print(f"Historial borrado: {deleted} mensaje(s)")
@@ -129,7 +135,7 @@ def main() -> None:
 
     backend_cmd = (
         f'cd "{ROOT}" && '
-        f"CHAT_HOST=0.0.0.0 CHAT_PORT=5001 python3 backend/main.py"
+        f"CHAT_HOST=0.0.0.0 CHAT_PORT=5001 {shlex.quote(backend_python)} backend/main.py"
     )
     front_cmd = f'cd "{FRONT}" && npm run dev'
 

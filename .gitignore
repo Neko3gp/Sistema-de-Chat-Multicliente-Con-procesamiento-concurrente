@@ -23,3 +23,6 @@ frontend/build/
 !.env.example
 .vscode/
 .DS_Store
+
+# Certificados y claves HTTPS de desarrollo (solo locales)
+.certs/

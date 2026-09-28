@@ -10,7 +10,7 @@ from connection_manager import ConnectionManager
 from message_queue_manager import MessageQueueManager
 from monitor_hub import MonitorHub
 import database
-from server_log import configure_logging, logger
+from server_log import configure_logging, logger, log_event
 
 
 def lan_ip():
@@ -40,6 +40,7 @@ def start_server(host="0.0.0.0", port=5000):
     monitor = MonitorHub(connection_manager, message_queue)
     connection_manager.monitor_hub = monitor
     logger.info("Servidor escuchando en %s:%s", host, port)
+    log_event("server_started", host=host, port=port, model="threading")
     logger.info("IP LAN detectada: %s; puerto: %s (acceso sujeto a host y firewall)", lan_ip(), port)
 
     try:

@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 from test_concurrency import Client
@@ -33,10 +34,13 @@ def temporary_server(users=2, server_timeout=30):
         )
         with tempfile.TemporaryFile(mode="w+") as console:
             process = subprocess.Popen(
-                ["timeout", f"{server_timeout}s", sys.executable, "-u", "-c", code,
+                [sys.executable, "-u", "-c", code,
                  str(ROOT / "backend"), str(port)],
                 env=env, cwd=directory, stdout=console, stderr=console,
             )
+            watchdog = threading.Timer(server_timeout, process.kill)
+            watchdog.daemon = True
+            watchdog.start()
             try:
                 deadline = time.monotonic() + 5
                 while True:
@@ -48,6 +52,7 @@ def temporary_server(users=2, server_timeout=30):
                     time.sleep(0.05)
                 yield port, Path(env["CHAT_LOG_DIR"]) / "server.log", console
             finally:
+                watchdog.cancel()
                 process.terminate()
                 try:
                     process.wait(timeout=3)
@@ -61,6 +66,9 @@ def login(client, user, password="test1234"):
     client.send({"type": "login", "username": user, "password": password})
     result = client.until("login_result")
     assert result["ok"], result
+    if result["role"] == "user":
+        assert client.receive()["type"] == "history"
+        assert client.receive()["type"] == "group_list"
     return result
 
 

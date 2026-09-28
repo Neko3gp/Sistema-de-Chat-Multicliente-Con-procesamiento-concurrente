@@ -7,7 +7,7 @@ import threading
 import time
 
 from websocket_handler import send_frame
-from server_log import log_event
+from server_log import log_event, message_metadata
 import database
 
 
@@ -74,9 +74,14 @@ class Connection:
                     if message.get("type") == "file":
                         data = message["data"]
                         size = len(data.rstrip("=")) * 6 // 8
-                        log_event("file", message.get("from"), to=self.username,
-                                  filename=message.get("filename"), bytes=size,
+                        detail = {**message_metadata(message), "to": self.username}
+                        log_event("file", message.get("from"), **detail,
+                                  direction="sent", bytes=size,
                                   duration_ms=round((time.monotonic() - started) * 1000, 3))
+                    elif message.get("type") in {"private_message", "broadcast", "group_message", "group_notice"}:
+                        detail = {**message_metadata(message), "to": self.username}
+                        log_event("message_sent", message.get("from"), **detail,
+                                  direction="sent", bytes=len(payload.encode("utf-8")))
                 finally:
                     self._outgoing.task_done()
         except (OSError, TypeError, ValueError) as error:
@@ -172,6 +177,14 @@ class ConnectionManager:
         """Devuelve una copia de los usuarios de chat, excluyendo admins."""
         with self._lock:
             return list(self._clients)
+
+    def session_stats(self):
+        """Copia las sesiones y colas sin retener el lock durante el envío."""
+        with self._lock:
+            sessions = list(self._sessions.items())
+        return [{"username": name, "role": connection.role,
+                 "outgoing_queue": connection._outgoing.qsize()}
+                for name, connection in sessions]
 
     def user_list_message(self):
         """Arma user_list con nombres y perfiles públicos (avatar/descripción)."""

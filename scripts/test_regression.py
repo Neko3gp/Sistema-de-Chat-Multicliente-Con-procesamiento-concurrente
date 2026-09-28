@@ -115,6 +115,9 @@ def monitor_fallback_and_overflow():
             stats = hub.stats()
             assert stats["msgs_total"] == 1 and stats["bytes_total"] == 128
             assert stats["cpu_percent"] >= 0 and stats["mem_mb"] > 0
+            assert stats["resource_source"] == "stdlib"
+            assert stats["process_memory_kind"] == "peak_rss"
+            assert stats["system_cpu_percent"] is None
         finally:
             hub.stop()
         assert not hub._sampler.is_alive() and not hub._worker.is_alive()

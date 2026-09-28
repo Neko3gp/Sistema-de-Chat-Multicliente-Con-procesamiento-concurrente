@@ -315,7 +315,7 @@ no se garantiza entregar mensajes pendientes ni un error antes del cierre.
 ```
 
 `log` contiene hasta 200 entradas recientes, en orden cronológico; `stats`
-contiene los mismos campos numéricos que `monitor_stats`, sin `type`.
+contiene las mismas métricas y estructura de ejecución que `monitor_stats`, sin `type`.
 `users` incluye únicamente sesiones de chat. Los timestamps usan ISO 8601 UTC.
 
 ### Monitor: eventos en vivo
@@ -331,7 +331,8 @@ contiene los mismos campos numéricos que `monitor_stats`, sin `type`.
 ```
 
 `event` puede ser `connect`, `disconnect`, `login_failed`, `message`,
-`broadcast`, `file` o `error`. Antes de autenticar, `user` puede ser `null`.
+`broadcast`, `file`, `processed`, `routed`, `message_sent`, `server_started` o
+`error`. Antes de autenticar, `user` puede ser `null`.
 `connect` distingue TCP (`detail.phase: "tcp"`, dirección IP:puerto) y login
 correcto (`detail.phase: "login"`). Un `message` registra el tipo y tamaño del
 JSON recibido, nunca el texto, contraseña o base64. Los broadcasts incluyen
@@ -341,6 +342,19 @@ un acuse de recibo del destinatario). Los errores y desconexiones incluyen
 `reason`. La cola del monitor admite 1000 eventos y descarta los más antiguos
 al saturarse; el stream no es un historial garantizado. El snapshot y los
 eventos próximos a la suscripción pueden describir el mismo hecho.
+
+Las solicitudes `read_receipt`, `typing` y `ping` se procesan normalmente pero
+no generan eventos de recepción ni entradas al log; los errores siguen siendo
+visibles. Esto evita llenar el monitor con señales efímeras.
+
+Los eventos de recepción llevan `detail.direction: "received"`; `processed`
+se emite desde el worker después de persistir y antes de resolver los destinos.
+`message_sent` y los eventos `file` con `direction: "sent"` se emiten desde el
+escritor después de completar el envío al socket, por cada destinatario.
+`routed` indica selección de destinos para un grupo. Las transferencias llevan
+`file_kind: "image" | "audio" | "document"`, inferido del MIME o extensión
+declarados, y `scope: "general" | "private" | "group"`. La interfaz separa las
+solicitudes de control (login, registro, etc.) de los mensajes de chat.
 
 ### Monitor: estadísticas cada 2 segundos
 ```json
@@ -361,11 +375,27 @@ cuentan login, registro, suscripción ni envíos del monitor. `msgs_per_sec`
 corresponde al intervalo de muestreo, y los totales comienzan en cero al arrancar.
 
 `cpu_percent` mide CPU del proceso y puede superar 100 si utiliza varios
-núcleos. Con `psutil` opcional, `mem_mb` es RSS actual en MiB; con la biblioteca
+núcleos. Con `psutil`, incluido en las dependencias, `mem_mb` es RSS actual en MiB; con la biblioteca
 estándar se usa CPU de `time.process_time()` y RSS máximo de `resource.getrusage`.
 En plataformas sin `resource` ni `psutil`, la memoria se informa como 0.
 Las tasas reflejan la última muestra; los demás contadores se consultan al
 crear cada mensaje, por lo que el snapshot no es una transacción global.
+
+Campos adicionales del monitor:
+
+- `pid`, `platform`, `uptime_seconds`, `process_model: "threading"` describen el backend.
+- `thread_details` enumera hilos Python con `name`, `native_id`, `role` y `daemon`.
+  Los roles son `acceptor`, `reader`, `writer`, `router`, `monitor`, `sampler` y `other`.
+- `sessions` incluye usuarios y administradores con `username`, `role` y
+  `outgoing_queue`; `monitor_queue_size` informa la cola de eventos.
+- `resource_source` distingue `psutil` y `stdlib`; `process_memory_kind` distingue
+  `rss` actual y `peak_rss` máximo.
+- `cpu_count`, `system_cpu_percent`, `memory_total_mb`, `memory_available_mb`,
+  `memory_used_mb`, `memory_percent` y `process_memory_percent` describen el host.
+  Los valores de sistema no disponibles son `null`, no cero.
+
+La enumeración de hilos no mide CPU individual ni certifica ejecución simultánea.
+Este proceso no ejecuta el microbenchmark de multiprocesos desde el monitor.
 
 Los logs se escriben en consola y en `logs/server.log` relativo a la raíz del
 proyecto. `CHAT_LOG_DIR` permite cambiar ese directorio (usado por las pruebas).

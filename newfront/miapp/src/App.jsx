@@ -321,6 +321,7 @@ export default function App() {
 
   function markChatRead(user = null, groupId = null) {
     const key = chatKey(user, groupId);
+    if (!unreadCounts[key]) return;
     const readAt = new Date().toISOString();
     setLastReadAt((prev) => {
       const next = { ...prev, [key]: readAt };
@@ -706,6 +707,9 @@ export default function App() {
       isViewingChatRef.current && key === viewingKey;
 
     if (viewingThis) {
+      const readAt = new Date().toISOString();
+      lastReadAtRef.current = { ...lastReadAtRef.current, [key]: readAt };
+      setLastReadAt((prev) => ({ ...prev, [key]: readAt }));
       if (!groupKeyFromChatKey(key) && isSocketOpen()) {
         sendReadReceipt(selectedUserRef.current || null);
       }
@@ -1580,7 +1584,9 @@ export default function App() {
   }
 
   async function handleSendFile(file) {
+    if (!isSocketOpen()) throw new Error("connection_closed");
     const data = await fileToBase64(file);
+    if (!isSocketOpen()) throw new Error("connection_closed");
     const id = createMessageId();
     const open = isSocketOpen();
     const activeGroup = selectedGroupId

@@ -62,6 +62,13 @@ def main():
                 client.send({"type": "monitor_subscribe"})
                 assert client.until("error")["reason"] == "forbidden"
 
+            # Las señales siguen llegando al destinatario, sin ruido en el log.
+            for _ in range(3):
+                a.send({"type": "read_receipt", "chat": "user02"})
+                assert b.until("read_receipt")["from"] == "user01"
+            a.send({"type": "typing", "chat": "user02", "isTyping": True})
+            assert b.until("typing")["from"] == "user01"
+
             a.send({"type": "private_message", "to": "user02", "message": "privado-secreto-T5"})
             assert b.until("private_message")["message"] == "privado-secreto-T5"
             b.send({"type": "broadcast", "message": "broadcast-secreto-T5"})
@@ -69,6 +76,10 @@ def main():
             a.send({"type": "file", "to": "user02", "filename": "T5.bin",
                     "data": base64.b64encode(b"archivo-secreto-T5").decode()})
             assert b.until("file")["filename"] == "T5.bin"
+            for filename, mime in (("T5.png", "image/png"), ("T5.m4a", "audio/mp4")):
+                a.send({"type": "file", "to": "user02", "filename": filename,
+                        "mimeType": mime, "data": base64.b64encode(b"archivo-secreto-T5").decode()})
+                assert b.until("file")["filename"] == filename
             a.send({"type": "login", "username": "user01", "password": "clave-secreta-T5"})
             assert a.until("login_result")["reason"] == "invalid_credentials"
             admin.send({"type": "broadcast", "message": "admin-no-es-chat"})
@@ -84,15 +95,36 @@ def main():
                 a.send({"type": "private_message", "to": "user01", "message": str(number)})
                 assert a.until("private_message")["message"] == str(number)
             stats = collect_until(admin, lambda item: item["type"] == "monitor_stats"
-                                  and item["msgs_total"] == 208, captured)
+                                  and item["msgs_total"] == 210, captured)
             assert stats["connected"] == 2 and stats["threads"] >= 10
             assert stats["bytes_total"] > 0 and stats["msgs_per_sec"] > 0
+            assert stats["pid"] > 0 and stats["process_model"] == "threading"
+            assert len(stats["thread_details"]) == stats["threads"]
+            roles = [thread["role"] for thread in stats["thread_details"]]
+            assert roles.count("reader") == roles.count("writer") == 3
+            assert {"acceptor", "router", "monitor", "sampler"} <= set(roles)
+            assert {session["username"] for session in stats["sessions"]} == {"admin", "user01", "user02"}
+            if stats["resource_source"] == "psutil":
+                assert stats["memory_total_mb"] > 0
+                assert stats["memory_available_mb"] >= 0
+                assert stats["system_cpu_percent"] is not None
             events = [item for item in captured if item["type"] == "monitor_event"]
+            assert not any(item["detail"].get("message_type") in {"read_receipt", "typing", "ping"}
+                           for item in events)
+            assert '"message_type": "read_receipt"' not in log_path.read_text()
             for user in ("user01", "user02"):
                 assert any(item["event"] == "connect" and item["user"] == user
                            and item["detail"].get("phase") == "login" for item in events)
             assert {"message", "broadcast", "file", "error", "login_failed"} <= {
                 item["event"] for item in events}
+            assert any(item["event"] == "message_sent" and item["thread"] == "writer-user02"
+                       and item["detail"].get("to") == "user02" for item in events)
+            assert any(item["event"] == "processed" and item["thread"] == "queue-worker" for item in events)
+            for category in ("document", "image", "audio"):
+                for direction, thread in (("received", "client-user01"), ("sent", "writer-user02")):
+                    assert any(item["detail"].get("file_kind") == category
+                               and item["detail"].get("direction") == direction
+                               and item["thread"] == thread for item in events), (category, direction)
 
             # Tras cerrar el admin, su username debe liberarse y el nuevo snapshot
             # debe conservar solo las últimas 200 entradas, sin modificar el chat.
@@ -107,7 +139,7 @@ def main():
             assert login(admin, "admin", "admin-test")["role"] == "admin"
             state = snapshot(admin)
             assert len(state["log"]) == 200 and set(state["users"]) == {"user01", "user02"}
-            assert state["stats"]["msgs_total"] == 208
+            assert state["stats"]["msgs_total"] == 210
             b.close()
             while a.until("user_list")["users"] != ["user01"]:
                 pass
@@ -117,7 +149,7 @@ def main():
             for user in ("user01", "user02"):
                 assert any(item.get("event") == "disconnect" and item.get("user") == user
                            for item in captured)
-            assert final["msgs_total"] == 208 and final["queue_size"] == 0
+            assert final["msgs_total"] == 210 and final["queue_size"] == 0
             serialized = json.dumps([initial, state, captured])
             for secret in ("privado-secreto-T5", "broadcast-secreto-T5", "archivo-secreto-T5",
                            "clave-secreta-T5", "admin-test", "admin-no-es-chat"):
@@ -127,7 +159,8 @@ def main():
         finally:
             for client in clients:
                 client.close()
-    print("PASO T5: snapshot (buffer 200), eventos en vivo y estadísticas; 208 mensajes contados")
+    print("PASO T5: snapshot (buffer 200), eventos en vivo y estadísticas; 210 mensajes contados")
+    print("PASO T5: recepción/envío de documento, imagen y audio; PID, lectores y escritores reales")
     print("PASO T5: admin fuera del chat; forbidden para usuarios; metadatos sin contenidos")
     print("PASO T5: desconexiones registradas; 0 usuarios y 6 hilos al quedar solo el admin")
     print("Servidor, base y logs temporales eliminados")

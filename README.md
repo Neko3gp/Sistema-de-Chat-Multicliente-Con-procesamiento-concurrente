@@ -66,8 +66,8 @@ temporalmente la cifra.
 - Node.js y npm para la interfaz web.
 - Linux, macOS o Windows con soporte para sockets TCP.
 - `websockets` solo es necesario para los clientes y scripts de prueba.
-- `psutil` es opcional; el monitor tiene una alternativa basada en la biblioteca
-  estándar.
+- `psutil`, incluido en `scripts/requirements.txt`, mide CPU y memoria en Linux,
+  macOS y Windows. Sin él, el monitor indica qué datos no están disponibles.
 
 ## 4. Instalación y ejecución
 
@@ -139,6 +139,33 @@ También se puede definir `VITE_WS_URL=ws://192.168.1.10:5001` en un archivo
 
 ## 5. Uso de la aplicación
 
+### Grabación de voz y futuro despliegue HTTPS
+
+El desarrollo local sigue usando `npm run dev` por HTTP. En la Mac se puede
+usar el micrófono desde `http://localhost:5173`. Desde un celular se utiliza la
+URL Network de la Mac; `localhost` en el celular apunta al propio teléfono.
+Por una IP con HTTP, el navegador bloquea la captura del micrófono. Se pueden
+seguir adjuntando audios; HTTPS no soluciona por sí mismo problemas de códecs o
+reproducción.
+
+La grabadora queda implementada para un futuro despliegue seguro. Para habilitarla
+fuera de localhost hará falta:
+
+1. Publicar el frontend con HTTPS y un certificado confiable para el navegador.
+2. Configurar un proxy WebSocket seguro: `wss://<dominio>/ws` hacia el backend
+   TCP/WebSocket. Debe aceptar la actualización de conexión WebSocket y mantener
+   las conexiones abiertas. El backend Python actual no termina TLS.
+3. El frontend selecciona automáticamente esa ruta `/ws` cuando la página usa
+   HTTPS; también se puede configurar `VITE_WS_URL=wss://<dominio>/ws` al compilar.
+   No usar `ws://` desde una página HTTPS.
+4. Dar permiso de micrófono en el dispositivo y comprobar grabación, reproducción
+   y envío entre los navegadores que se utilizarán.
+
+No basta con cambiar `http` por `https` en la dirección: el servidor y el proxy
+necesitan esa configuración. No se requiere instalar certificados locales para
+el flujo actual. Los archivos de `.certs/`, si existen de pruebas anteriores,
+quedan excluidos de Git y no se utilizan al arrancar.
+
 ### Usuarios normales
 
 Iniciar sesión con `user01` / `test1234` o registrar una cuenta nueva. La
@@ -150,6 +177,14 @@ interfaz permite:
 - perfiles con avatar y descripción;
 - notificaciones, no leídos y confirmaciones de lectura;
 - historial de mensajes recuperado desde SQLite al volver a iniciar sesión.
+
+Con el campo de mensaje vacío, el botón de micrófono abre la grabadora de notas
+de voz: **Grabar → Detener → escuchar → Enviar**. También puedes descartarlas.
+El límite es de 2 minutos y 5 MiB; el navegador selecciona un formato de audio
+compatible. Al cambiar de conversación se descarta la grabación y se libera el
+micrófono. Para grabar se requiere permiso de micrófono y abrir la aplicación en
+`localhost` o HTTPS; el acceso LAN por una IP con HTTP permite adjuntar archivos,
+pero el navegador bloquea la captura del micrófono.
 
 Los mensajes privados y grupales se guardan aunque el destinatario esté
 desconectado. El historial conserva los últimos 500 mensajes visibles para cada
@@ -199,6 +234,7 @@ demostrar el backend aunque no se quiera abrir la interfaz React.
 
 ```bash
 python -m compileall -q backend scripts
+node --test newfront/miapp/src/utils/monitor.test.js
 cd newfront/miapp
 npm run build
 ```
@@ -266,3 +302,30 @@ moderación, almacenamiento de archivos externo ni alta disponibilidad. El
 rendimiento documentado corresponde a las máquinas, versiones y condiciones
 indicadas en cada evidencia; no garantiza los mismos resultados en cualquier
 red o hardware.
+
+### Monitor: interpretar la actividad y demostrar concurrencia
+
+- **Recibido:** el servidor recibió una solicitud; aún puede rechazarla.
+- Las señales de lectura, escritura y ping se procesan sin registrarlas como
+  actividad. Cambiar a un chat sin mensajes pendientes no envía otra confirmación
+  de lectura.
+- **Procesado:** el worker guardó el mensaje y comienza a resolver destinos.
+- **Enviado:** el escritor terminó de escribir al socket de un destinatario;
+  no confirma lectura. Una difusión puede producir varios eventos de envío.
+- Las transferencias distinguen imágenes, audios y documentos según MIME o
+  extensión declarados; la etiqueta no certifica el contenido del archivo.
+- **Historial al conectar:** copia de hasta 200 entradas anteriores a la conexión
+  del administrador, incluidos arranque y actividad reciente. No se actualiza.
+
+El chat usa un proceso con hilos. La comparación con procesos se ejecuta aparte:
+`python scripts/bench_threads_vs_processes.py`; véase `docs/HILOS_VS_PROCESOS.md`.
+
+Si faltan recursos en macOS, instala las dependencias y reinicia el backend:
+
+```bash
+.venv/bin/python -m pip install -r scripts/requirements.txt
+.venv/bin/python backend/main.py --port 5001
+```
+
+El monitor muestra los recursos
+**del equipo del backend**, aunque se abra desde otro dispositivo.

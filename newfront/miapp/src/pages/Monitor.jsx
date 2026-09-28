@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
-import { FiActivity, FiArrowUpRight, FiCpu, FiEdit2, FiLogOut, FiPause, FiPlay, FiPlus, FiSearch, FiServer, FiShield, FiTrash2, FiUsers } from "react-icons/fi";
-import { EVENT_LIMIT, eventLabels, formatBytes, formatNumber, formatTime } from "../utils/monitor";
+import { FiActivity, FiArrowUpRight, FiArrowDownLeft, FiImage, FiMusic, FiFile, FiCheckCircle, FiCpu, FiEdit2, FiLogOut, FiPause, FiPlay, FiPlus, FiSearch, FiServer, FiShield, FiTrash2, FiUsers } from "react-icons/fi";
+import { EVENT_LIMIT, describeEvent, describeLog, eventFilters, formatBytes, formatNumber, formatTime } from "../utils/monitor";
 import "./Monitor.css";
+
+function EventBadge({ event }) {
+  const view = describeEvent(event);
+  const Icon = ({ image: FiImage, audio: FiMusic, document: FiFile,
+    message: FiArrowDownLeft, message_sent: FiArrowUpRight,
+    processed: FiCheckCircle, connect: FiUsers, request: FiShield })[view.category] || FiActivity;
+  return <span data-category={view.category} className={`monitor-event-label ${["error", "login_failed"].includes(view.category) ? "is-error" : ""}`}><Icon aria-hidden="true" />{view.label}</span>;
+}
+
+function EventDetail({ event }) {
+  const view = describeEvent(event);
+  return <div className="monitor-event-detail"><p>{view.summary}</p>{view.route ? <span>{view.route}</span> : null}{event.detail?.filename ? <strong>{event.detail.filename}</strong> : null}<small className="monitor-thread">Hilo: {event.thread}</small><details><summary>Metadatos técnicos</summary><code>{JSON.stringify(event.detail || {})}</code></details></div>;
+}
 
 function ActivityChart({ samples }) {
   if (samples.length < 2) {
@@ -124,8 +137,8 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
   const events = pausedEvents ?? monitor.events;
   const search = query.trim().toLocaleLowerCase();
   const filteredEvents = events.filter((event) =>
-    (eventType === "all" || event.event === eventType) &&
-    `${eventLabels[event.event] || event.event} ${event.user || ""} ${event.thread || ""} ${JSON.stringify(event.detail || {})}`.toLocaleLowerCase().includes(search),
+    (eventType === "all" || describeEvent(event).category === eventType) &&
+    `${describeEvent(event).label} ${event.user || ""} ${event.thread || ""} ${JSON.stringify(event.detail || {})}`.toLocaleLowerCase().includes(search),
   ).slice().reverse();
   const filteredLog = log.filter((entry) => `${entry.level} ${entry.thread} ${entry.msg}`.toLocaleLowerCase().includes(search)).slice().reverse();
   const metrics = [
@@ -176,20 +189,21 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
             <ActivityChart samples={samples} />
             <dl className="monitor-resources">
               <div><dt>CPU del proceso</dt><dd>{formatNumber(stats?.cpu_percent, 1)}<small> %</small></dd></div>
-              <div><dt>Memoria reportada</dt><dd>{formatNumber(stats?.mem_mb, 1)}<small> MiB</small></dd></div>
+              <div><dt>{stats?.process_memory_kind === "peak_rss" ? "Memoria máxima del proceso" : "Memoria del proceso (RSS)"}</dt><dd>{formatNumber(stats?.mem_mb, 1)}<small> MiB</small></dd></div>
               <div><dt>En cola</dt><dd>{formatNumber(stats?.queue_size)}</dd></div>
               <div><dt>Tráfico recibido</dt><dd>{formatBytes(stats?.bytes_total)}</dd></div>
             </dl>
             <div className="monitor-host-resources">
-              <div className="monitor-host-heading"><div><h3>Recursos del equipo</h3><p>Capacidad disponible y proporción utilizada por el proceso.</p></div><FiCpu aria-hidden="true" /></div>
+              <div className="monitor-host-heading"><div><h3>Recursos del equipo</h3><p>Recursos del equipo que ejecuta el backend, no del navegador.</p></div><FiCpu aria-hidden="true" /></div>
               <div className="monitor-host-grid">
-                <div><span>Núcleos disponibles</span><strong>{formatNumber(stats?.cpu_count)}</strong></div>
+                <div><span>CPU lógicas</span><strong>{formatNumber(stats?.cpu_count)}</strong></div>
                 <div><span>CPU del sistema</span><strong>{formatNumber(stats?.system_cpu_percent, 1)}<small> %</small></strong></div>
                 <div><span>Memoria total</span><strong>{formatNumber(stats?.memory_total_mb, 0)}<small> MiB</small></strong></div>
                 <div><span>Memoria disponible</span><strong>{formatNumber(stats?.memory_available_mb, 0)}<small> MiB</small></strong></div>
                 <div><span>Memoria utilizada</span><strong>{formatNumber(stats?.memory_used_mb, 0)}<small> MiB</small></strong></div>
                 <div><span>Uso del proceso</span><strong>{formatNumber(stats?.process_memory_percent, 2)}<small> % RAM</small></strong></div>
               </div>
+              <p className="monitor-footnote">{stats?.resource_source === "psutil" ? "Medición multiplataforma con psutil. CPU del proceso: 100% equivale a una CPU lógica." : "Medición limitada: instala scripts/requirements.txt y reinicia el backend para obtener los recursos del sistema. — significa dato no disponible."}</p>
             </div>
           </section>
 
@@ -203,17 +217,18 @@ export default function Monitor({ username, monitor, reconnecting, error, onLogo
         <section className="monitor-panel monitor-events" aria-labelledby="events-title">
           <div className="monitor-panel-heading"><div><h2 id="events-title">Registro de actividad</h2><p>Metadatos del servidor, sin textos de conversaciones ni contraseñas</p></div>{tab === "events" ? <button type="button" aria-pressed={pausedEvents !== null} onClick={() => setPausedEvents(pausedEvents === null ? [...monitor.events] : null)}>{pausedEvents === null ? <FiPause aria-hidden="true" /> : <FiPlay aria-hidden="true" />}{pausedEvents === null ? "Pausar lista" : "Reanudar lista"}</button> : null}</div>
           <div className="monitor-toolbar">
-            <div className="monitor-tabs" role="group" aria-label="Fuente del registro"><button type="button" aria-pressed={tab === "events"} onClick={() => setTab("events")}>Eventos en vivo</button><button type="button" aria-pressed={tab === "log"} onClick={() => setTab("log")}>Registro inicial</button></div>
-            <div className="monitor-filters"><label className="monitor-search"><FiSearch aria-hidden="true" /><span className="monitor-sr-only">Buscar en el registro</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar usuario o detalle…" /></label>{tab === "events" ? <label><span className="monitor-sr-only">Tipo de evento</span><select value={eventType} onChange={(event) => setEventType(event.target.value)}><option value="all">Todos los eventos</option>{Object.entries(eventLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label> : null}</div>
+            <div className="monitor-tabs" role="group" aria-label="Fuente del registro"><button type="button" aria-pressed={tab === "events"} onClick={() => setTab("events")}>Eventos en vivo</button><button type="button" aria-pressed={tab === "log"} onClick={() => setTab("log")}>Historial al conectar</button></div>
+            <div className="monitor-filters"><label className="monitor-search"><FiSearch aria-hidden="true" /><span className="monitor-sr-only">Buscar en el registro</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar usuario o detalle…" /></label>{tab === "events" ? <label><span className="monitor-sr-only">Tipo de evento</span><select value={eventType} onChange={(event) => setEventType(event.target.value)}><option value="all">Todos los eventos</option>{Object.entries(eventFilters).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label> : null}</div>
           </div>
+          <p className="monitor-pause-note">{tab === "log" ? "Copia de las últimas 200 entradas que el servidor conservaba al abrir esta sesión del monitor. No es una lista de tareas de arranque ni se actualiza en vivo." : "Recibido = cliente → servidor. Enviado = servidor → socket del destinatario. Cada destinatario genera un envío; no implica que haya leído el mensaje."}</p>
           {pausedEvents !== null && tab === "events" ? <p className="monitor-pause-note" role="status">Lista pausada para lectura. Las métricas siguen actualizándose; al reanudar se muestran los eventos recientes disponibles.</p> : null}
           <div className="monitor-table-scroll" tabIndex={0} role="region" aria-label="Registro del servidor">
             <table><thead><tr><th scope="col">Hora local</th><th scope="col">{tab === "events" ? "Evento" : "Nivel"}</th><th scope="col">{tab === "events" ? "Usuario" : "Hilo"}</th><th scope="col">Detalle</th></tr></thead><tbody>
-              {tab === "events" ? filteredEvents.map((event) => <tr key={event.id}><td><time dateTime={event.ts}>{formatTime(event.ts)}</time></td><td><span className={`monitor-event-label ${["error", "login_failed"].includes(event.event) ? "is-error" : ""}`}>{eventLabels[event.event] || event.event}</span></td><td>{event.user || "Sin autenticar"}</td><td><code>{JSON.stringify(event.detail || {})}</code><small className="monitor-thread">{event.thread}</small></td></tr>) : filteredLog.map((entry, index) => <tr key={index}><td><time dateTime={entry.ts}>{formatTime(entry.ts)}</time></td><td>{entry.level}</td><td>{entry.thread}</td><td><code>{entry.msg}</code></td></tr>)}
+              {tab === "events" ? filteredEvents.map((event) => <tr key={event.id}><td><time dateTime={event.ts}>{formatTime(event.ts)}</time></td><td><EventBadge event={event} /></td><td>{event.user || "Sin autenticar"}</td><td><EventDetail event={event} /></td></tr>) : filteredLog.map((entry, index) => <tr key={index}><td><time dateTime={entry.ts}>{formatTime(entry.ts)}</time></td><td>{entry.level}</td><td>{entry.thread}</td><td>{describeLog(entry) ? <><EventBadge event={describeLog(entry)} /><EventDetail event={describeLog(entry)} /></> : entry.msg}</td></tr>)}
               {(tab === "events" ? filteredEvents : filteredLog).length === 0 ? <tr><td colSpan={4} className="monitor-table-empty">{search || eventType !== "all" && tab === "events" ? "No hay resultados para estos filtros." : "Todavía no hay entradas para mostrar."}</td></tr> : null}
             </tbody></table>
           </div>
-          <div className="monitor-log-footer"><span>{tab === "events" ? `${filteredEvents.length} eventos visibles` : `${filteredLog.length} entradas del estado inicial`}</span><span>Máximo {EVENT_LIMIT} entradas · más recientes primero</span></div>
+          <div className="monitor-log-footer"><span>{tab === "events" ? `${filteredEvents.length} eventos visibles` : `${filteredLog.length} entradas anteriores a esta conexión`}</span><span>Máximo {EVENT_LIMIT} entradas · más recientes primero</span></div>
         </section>
         </> : null}
         <footer className="monitor-footer"><span>Actualización de métricas cada 2 s · Los totales se reinician con el servidor.</span><span>{section === "monitor" ? "Monitor de solo lectura" : "Cambios administrativos protegidos por rol"}</span></footer>

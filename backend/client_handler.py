@@ -12,7 +12,7 @@ import time
 from websocket_handler import do_handshake, recv_frame
 from connection_manager import Connection
 import database
-from server_log import log_event
+from server_log import log_event, message_metadata
 
 
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -59,8 +59,10 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 continue
 
             msg_type = message.get("type")
-            log_event("message", username, message_type=msg_type,
-                      to=message.get("to"), bytes=len(raw.encode("utf-8")))
+            # Señales efímeras: se procesan, pero no llenan el historial operativo.
+            if msg_type not in {"read_receipt", "typing", "ping"}:
+                log_event("message", username, **message_metadata(message),
+                          direction="received", bytes=len(raw.encode("utf-8")))
 
             if msg_type == "register":
                 ok = database.create_user(message.get("username"), message.get("password"))
@@ -467,6 +469,8 @@ def process_message(item):
 
     if msg_type in {"broadcast", "private_message", "file", "group_message", "group_notice"}:
         database.save_chat_message(message)
+        log_event("processed", message.get("from"), **message_metadata(message),
+                  direction="processed")
 
     if msg_type == "broadcast":
         count = cm.broadcast(message, exclude=message.get("from"))
@@ -496,7 +500,7 @@ def process_message(item):
                 target.send(message)
                 delivered += 1
         log_event(
-            "message",
+            "routed",
             sender_name,
             kind=msg_type,
             groupId=message.get("groupId"),

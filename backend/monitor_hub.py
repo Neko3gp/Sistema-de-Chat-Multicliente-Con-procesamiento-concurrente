@@ -36,13 +36,14 @@ class MonitorHub:
         self._rates = {"msgs_per_sec": 0.0, "cpu_percent": 0.0, "mem_mb": 0.0}
         self._resources = {
             "cpu_count": os.cpu_count() or 1,
-            "system_cpu_percent": 0.0,
-            "memory_total_mb": 0.0,
-            "memory_available_mb": 0.0,
-            "memory_used_mb": 0.0,
-            "memory_percent": 0.0,
-            "process_memory_percent": 0.0,
+            "system_cpu_percent": None,
+            "memory_total_mb": None,
+            "memory_available_mb": None,
+            "memory_used_mb": None,
+            "memory_percent": None,
+            "process_memory_percent": None,
         }
+        self._started = time.monotonic()
         self._stop = threading.Event()
         self._process = psutil.Process() if psutil is not None else None
         if self._process is not None:
@@ -99,10 +100,21 @@ class MonitorHub:
         """Obtiene contadores actuales y las tasas de la última muestra."""
         with self._metrics_lock:
             values = {**self._rates, "msgs_total": self._msgs_total,
-                      "bytes_total": self._bytes_total}
+                      "bytes_total": self._bytes_total, **self._resources}
+        threads = []
+        for thread in threading.enumerate():
+            role = ("reader" if thread.name.startswith("client-") else
+                    "writer" if thread.name.startswith("writer-") else
+                    {"MainThread": "acceptor", "queue-worker": "router",
+                     "monitor-hub": "monitor", "monitor-stats": "sampler"}.get(thread.name, "other"))
+            threads.append({"name": thread.name, "native_id": thread.native_id,
+                            "role": role, "daemon": thread.daemon})
         return {"connected": len(self.connections.all_usernames()),
-                "threads": threading.active_count(), "queue_size": self.message_queue.qsize(),
-                **self._resources,
+                "threads": len(threads), "queue_size": self.message_queue.qsize(),
+                "thread_details": threads, "pid": os.getpid(), "process_model": "threading",
+                "uptime_seconds": round(time.monotonic() - self._started),
+                "platform": sys.platform, "monitor_queue_size": self._queue.qsize(),
+                "sessions": self.connections.session_stats(),
                 **values}
 
     @staticmethod
@@ -138,7 +150,7 @@ class MonitorHub:
         """Mide CPU del proceso y memoria RSS; el respaldo mide RSS máximo."""
         now, cpu = time.monotonic(), time.process_time()
         elapsed = max(now - self._last_wall, 1e-9)
-        system_cpu_percent = 0.0
+        system_cpu_percent = None
         memory_total, memory_available = 0, 0
         if self._process is not None:
             try:
@@ -148,14 +160,14 @@ class MonitorHub:
                 virtual_memory = psutil.virtual_memory()
                 memory_total = virtual_memory.total
                 memory_available = virtual_memory.available
-            except psutil.Error:
+            except (psutil.Error, OSError, RuntimeError):
                 self._process = None
                 log_event("error", level=logging.WARNING, reason="psutil_failed_using_stdlib")
         if self._process is None:
             cpu_percent = (cpu - self._last_cpu) / elapsed * 100
             usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss if resource else 0
             mem_mb = usage / (1024 * 1024 if sys.platform == "darwin" else 1024)
-            system_cpu_percent = 0.0
+            system_cpu_percent = None
             memory_total, memory_available = self._fallback_memory()
         memory_used = max(memory_total - memory_available, 0)
         with self._metrics_lock:
@@ -164,12 +176,14 @@ class MonitorHub:
                            "cpu_percent": round(cpu_percent, 2), "mem_mb": round(mem_mb, 2)}
             self._resources = {
                 "cpu_count": os.cpu_count() or 1,
-                "system_cpu_percent": round(system_cpu_percent, 2),
-                "memory_total_mb": round(memory_total / (1024 * 1024), 2),
-                "memory_available_mb": round(memory_available / (1024 * 1024), 2),
-                "memory_used_mb": round(memory_used / (1024 * 1024), 2),
-                "memory_percent": round(memory_used / memory_total * 100, 2) if memory_total else 0.0,
-                "process_memory_percent": round(mem_mb / (memory_total / (1024 * 1024)) * 100, 3) if memory_total else 0.0,
+                "system_cpu_percent": round(system_cpu_percent, 2) if system_cpu_percent is not None else None,
+                "resource_source": "psutil" if self._process is not None else "stdlib",
+                "process_memory_kind": "rss" if self._process is not None else "peak_rss",
+                "memory_total_mb": round(memory_total / (1024 * 1024), 2) if memory_total else None,
+                "memory_available_mb": round(memory_available / (1024 * 1024), 2) if memory_total else None,
+                "memory_used_mb": round(memory_used / (1024 * 1024), 2) if memory_total else None,
+                "memory_percent": round(memory_used / memory_total * 100, 2) if memory_total else None,
+                "process_memory_percent": round(mem_mb / (memory_total / (1024 * 1024)) * 100, 3) if memory_total else None,
             }
         self._last_wall, self._last_cpu, self._last_msgs = now, cpu, total
 

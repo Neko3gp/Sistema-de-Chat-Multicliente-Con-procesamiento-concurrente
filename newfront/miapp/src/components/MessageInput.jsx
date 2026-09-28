@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
-import { FiFile, FiImage, FiMusic, FiPaperclip, FiSend, FiSmile, FiX } from "react-icons/fi";
+import { FiFile, FiImage, FiMusic, FiMic, FiPaperclip, FiSend, FiSmile, FiX } from "react-icons/fi";
+import VoiceRecorder from "./VoiceRecorder";
 import { getFileKind } from "../utils/files";
 
 const FILE_TYPES = {
@@ -48,6 +49,7 @@ export default function MessageInput({
   onSendFile,
   onTyping,
 }) {
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
   const [error, setError] = useState("");
@@ -208,6 +210,10 @@ export default function MessageInput({
 
   const emojiKeyboardOpen = emojiOpen && !pendingFile;
 
+  if (voiceOpen) {
+    return <VoiceRecorder onSend={onSendFile} onClose={() => setVoiceOpen(false)} />;
+  }
+
   return (
     <form
       className={emojiKeyboardOpen ? "message-input emoji-keyboard-open" : "message-input"}
@@ -323,6 +329,8 @@ export default function MessageInput({
         >
           <FiSmile size={20} aria-hidden="true" />
         </button>
+
+        {!text.trim() && !pendingFile ? <button type="button" className="attach-btn" title="Grabar nota de voz" aria-label="Grabar nota de voz" disabled={sending} onClick={() => { setEmojiOpen(false); setPickerOpen(false); setTyping(false); setVoiceOpen(true); }}><FiMic size={20} aria-hidden="true" /></button> : null}
 
         <button
           type="submit"

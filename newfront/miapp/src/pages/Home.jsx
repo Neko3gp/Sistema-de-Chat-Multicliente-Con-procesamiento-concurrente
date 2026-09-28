@@ -289,6 +289,7 @@ export default function Home({
         </section>
 
         <MessageInput
+          key={selectedGroupId ? `group:${selectedGroupId}` : `chat:${selectedUser || "general"}`}
           selectedUser={selectedUser}
           selectedGroupId={selectedGroupId}
           onSend={onSend}

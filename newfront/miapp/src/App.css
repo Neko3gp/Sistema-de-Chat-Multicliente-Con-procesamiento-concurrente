@@ -3170,3 +3170,14 @@
     place-items: center;
   }
 }
+
+.voice-recorder { display: flex; flex-direction: column; gap: 10px; }
+.voice-recorder-heading { display: flex; align-items: center; gap: 10px; color: var(--color-text); }
+.voice-recorder-heading > span { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; }
+.voice-recorder > p { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+.voice-recorder audio { width: 100%; height: 40px; }
+.voice-recorder-actions { display: flex; justify-content: space-between; gap: 12px; }
+.voice-recorder-actions button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--color-border-strong); border-radius: 12px; background: var(--color-surface-elevated); color: var(--color-text); cursor: pointer; }
+.voice-recorder-actions button:last-child { color: var(--color-primary-hover); }
+.voice-recorder-actions button:disabled { opacity: .5; cursor: wait; }
+.voice-recorder > .input-error { color: var(--color-danger); }

@@ -7,6 +7,11 @@ export function getWsUrl() {
     return fromEnv.trim();
   }
 
+  // En un futuro despliegue HTTPS, el proxy debe exponer /ws con TLS.
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    return `wss://${window.location.host}/ws`;
+  }
+
   const host =
     typeof window !== "undefined" && window.location.hostname
       ? window.location.hostname
