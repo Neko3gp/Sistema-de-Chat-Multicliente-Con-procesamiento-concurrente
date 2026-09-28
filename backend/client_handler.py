@@ -135,6 +135,65 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 _broadcast_user_list(connection_manager)
                 continue
 
+            if msg_type == "list_directory":
+                _reply(connection, {
+                    "type": "directory",
+                    "users": database.list_directory_users(exclude_username=username),
+                })
+                continue
+
+            if msg_type == "read_receipt":
+                # chat null/broadcast => sala general; chat=usuario => chat privado.
+                chat = message.get("chat")
+                if chat in (None, "", "broadcast"):
+                    connection_manager.broadcast(
+                        {"type": "read_receipt", "from": username, "chat": None},
+                        exclude=username,
+                    )
+                elif isinstance(chat, str):
+                    target = connection_manager.get(chat)
+                    if target:
+                        # Al destinatario: "username ya leyó su chat contigo".
+                        target.send(
+                            {"type": "read_receipt", "from": username, "chat": username}
+                        )
+                continue
+
+            if msg_type == "group_message":
+                members = message.get("members")
+                group_id = message.get("groupId")
+                group_name = message.get("groupName") or ""
+                text = message.get("message")
+                if (
+                    not isinstance(members, list)
+                    or not isinstance(group_id, str)
+                    or not group_id.strip()
+                    or not isinstance(text, str)
+                    or not text.strip()
+                ):
+                    _reply(connection, {"type": "error", "reason": "invalid_message"})
+                    continue
+                cleaned = []
+                for name in members:
+                    if isinstance(name, str) and name.strip() and name != username:
+                        cleaned.append(name.strip())
+                # Incluye al emisor para que todos los miembros compartan la lista.
+                unique_members = list(dict.fromkeys([username, *cleaned]))
+                if len(unique_members) < 2:
+                    _reply(connection, {"type": "error", "reason": "invalid_message"})
+                    continue
+                payload = {
+                    "type": "group_message",
+                    "from": username,
+                    "groupId": group_id.strip(),
+                    "groupName": group_name if isinstance(group_name, str) else "",
+                    "members": unique_members,
+                    "message": text.strip(),
+                }
+                connection_manager.monitor_hub.record_message(len(raw.encode("utf-8")))
+                message_queue.put({"message": payload, "connection_manager": connection_manager})
+                continue
+
             if msg_type not in {"broadcast", "private_message", "file"}:
                 _reply(connection, {"type": "error", "reason": "invalid_message"})
                 continue
@@ -198,6 +257,25 @@ def process_message(item):
             sender = cm.get(message.get("from"))
             if sender:
                 _reply(sender, {"type": "error", "reason": "user_not_found"})
+
+    elif msg_type == "group_message":
+        sender_name = message.get("from")
+        members = message.get("members") or []
+        delivered = 0
+        for name in members:
+            if name == sender_name:
+                continue
+            target = cm.get(name)
+            if target:
+                target.send(message)
+                delivered += 1
+        log_event(
+            "message",
+            sender_name,
+            kind="group_message",
+            groupId=message.get("groupId"),
+            delivered=delivered,
+        )
 
     elif msg_type == "file":
         # Sin "to": archivo de sala general (broadcast). Con "to": privado.

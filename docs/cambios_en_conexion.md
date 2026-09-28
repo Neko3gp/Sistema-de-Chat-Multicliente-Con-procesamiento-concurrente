@@ -121,6 +121,191 @@ Sin cambios de protocolo: se reutiliza el mismo `login` al reconectar.
 
 ---
 
+## 4. Estados de mensaje, no leídos y notificaciones
+
+### Objetivo
+Saber si un mensaje propio está **no enviado / enviado / visto**, y enterarte
+cuando llega un mensaje de otro chat (o al salir / cerrar la app sin abrirlo).
+
+### Backend
+- Nuevo tipo del cliente:
+  ```json
+  { "type": "read_receipt", "chat": "user02" }
+  ```
+  `chat: null` (o `"broadcast"`) = sala general.
+- Reenvío:
+  - Privado → solo al peer:
+    `{ "type": "read_receipt", "from": "<lector>", "chat": "<lector>" }`
+  - Sala general → broadcast a los demás con `chat: null`
+- No altera `broadcast` / `private_message` / `file`
+
+Archivos back:
+- `backend/client_handler.py`
+- `docs/PROTOCOLO_MENSAJES.md`
+
+### Frontend — estados (ticks)
+- `○` / `!` → no enviado (sin socket / fallo)
+- `✓✓` gris → enviado al servidor
+- `✓✓` azul → visto (`read_receipt` del otro)
+- Al abrir el chat se marca leído y se manda `read_receipt`
+
+### Frontend — bandeja y badges
+- Campana en la sidebar con contador total
+- Badge numérico por chat en la lista
+- Panel de notificaciones: quién escribió y preview; toque abre ese chat
+- “Marcar leídas” limpia contadores
+- Si estás **viendo** ese chat (desktop siempre visible; móvil con chat abierto),
+  **no** suma no leído y sí manda recibo de lectura
+- Si estás en **otro** chat o en la **lista** (móvil), sí cuenta como no leído
+
+### Frontend — toast emergente (arriba)
+- Aparece solo cuando el mensaje **no** es del chat que estás viendo
+- Muestra: foto/iniciales, nombre, preview truncado con `…`
+- Fondo liquid glass; animación de bajada
+- Toque → abre ese chat; × o ~5 s → se cierra
+- Convive con la campana (el toast es el aviso inmediato; la bandeja el historial)
+
+### Persistencia
+- No leídos y items de bandeja en `localStorage` por usuario (`unreadStore`)
+- Si sales de la app y vuelves a entrar con la misma cuenta, sigues viendo
+  qué no habías abierto
+
+Archivos front:
+- `newfront/miapp/src/components/MessageStatus.jsx`
+- `newfront/miapp/src/components/IncomingToast.jsx`
+- `newfront/miapp/src/components/NotificationTray.jsx`
+- `newfront/miapp/src/utils/messageStatus.js`
+- `newfront/miapp/src/utils/unreadStore.js`
+- `newfront/miapp/src/services/socket.js` (`sendReadReceipt`)
+- `newfront/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
+
+---
+
+## 5. Botón +: nuevo mensaje y nuevo grupo
+
+### Objetivo
+El FAB `+` ya no abre solo un input de texto: menú con **Nuevo mensaje** o
+**Nuevo grupo**, usando usuarios reales de SQLite.
+
+### Backend
+- Directorio de cuentas registradas (sin admins; excluye al solicitante):
+  ```json
+  { "type": "list_directory" }
+  ```
+  Respuesta:
+  ```json
+  {
+    "type": "directory",
+    "users": [
+      { "username": "Ana", "avatarUrl": "", "description": "Hola" }
+    ]
+  }
+  ```
+- Mensaje de grupo (el grupo se crea en el cliente; el server solo reparte):
+  ```json
+  {
+    "type": "group_message",
+    "groupId": "abc-123",
+    "groupName": "Equipo frontend",
+    "members": ["Ana", "Carlos"],
+    "message": "Reunión a las 5"
+  }
+  ```
+  El servidor añade `from` y reenvía a cada miembro conectado (excepto el emisor).
+
+Archivos back:
+- `backend/database.py` (`list_directory_users`)
+- `backend/client_handler.py` (`list_directory`, `group_message`)
+- `docs/PROTOCOLO_MENSAJES.md`
+
+### Frontend
+- Menú Crear → Nuevo mensaje / Nuevo grupo
+- Nuevo mensaje: lista + búsqueda sobre el directorio; al elegir se abre el chat
+- Nuevo grupo: nombre + multi-selección de integrantes; aparece en la sidebar
+- Grupos custom persistidos en `localStorage` (`localChats.customGroups`)
+- Si te llega un `group_message` de un grupo nuevo, se añade solo a tu lista
+
+Archivos front:
+- `newfront/miapp/src/components/ComposeMenu.jsx`
+- `newfront/miapp/src/components/NewMessageDialog.jsx`
+- `newfront/miapp/src/components/NewGroupDialog.jsx`
+- `newfront/miapp/src/utils/localChats.js`
+- `newfront/miapp/src/services/socket.js` (`requestDirectory`, `sendGroupMessage`)
+- `newfront/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
+
+---
+
+## 6. Archivos que “se enviaban” pero no llegaban
+
+### Problema
+En sala general el front mandaba `file` sin `to`, pero el back solo trataba bien
+el privado. Además, archivos grandes llegaban en **varios frames** WebSocket y
+el server fallaba con `invalid_json` al parsear un fragmento a medias.
+
+### Backend
+- `file` **sin** `to` (o vacío) → broadcast a la sala (como texto general)
+- `file` **con** `to` → solo a ese usuario (o `user_not_found`)
+- Lectura WebSocket reensambla mensajes fragmentados antes del JSON
+
+Archivos back:
+- `backend/client_handler.py` / cola (`process_message` para `file`)
+- `backend/websocket_handler.py` (reensamblado de frames)
+
+### Frontend
+- Sala general: `sendFile(null, …)` (sin `to`)
+- Privado: `sendFile(usuario, …)`
+- UI: menú de tipo de archivo inline; nombres largos con ellipsis
+
+---
+
+## 7. Conexión desde el teléfono / PWA (puerto y host)
+
+### Problema
+En Mac el puerto **5000** suele estar ocupado (AirPlay). `localhost` en el
+celular apunta al propio teléfono, no a la PC. El teclado en PWA empujaba el
+layout y “desaparecía” el contacto.
+
+### Ajustes
+- Servidor típico de desarrollo: `--port 5001` / `CHAT_PORT=5001`
+- Front: `VITE_WS_PORT` (default `5001`) y host = `window.location.hostname`
+  (o `VITE_WS_URL` completo en `.env`)
+- Viewport: `interactive-widget=overlays-content` + sync de altura
+  (`visualViewport`) para que el chat no salte al abrir el teclado
+
+Archivos:
+- `newfront/miapp/src/services/socket.js`
+- `newfront/miapp/.env.example`
+- `newfront/miapp/index.html`
+- `newfront/miapp/src/utils/viewport.js`
+- `README.md` (arranque / LAN)
+
+### Backend
+Sin cambio de protocolo; solo host/puerto de escucha.
+
+---
+
+## 8. Lista de chats / contactos locales (sin historial)
+
+### Decisión
+Por requisito de fase, **no** se persisten los mensajes en el servidor.
+Sí se guarda en el navegador la **lista de personas** con las que ya chateaste
+(y contactos/perfiles vistos), para que no desaparezcan al recargar.
+
+### Frontend
+- `localStorage` (`localChats`): `chatUsers`, `contacts`, luego también
+  `customGroups`
+- Al login se restauran; al usar la app se van guardando
+- El historial de mensajes sigue siendo solo en memoria de la sesión actual
+
+Archivos front:
+- `newfront/miapp/src/utils/localChats.js`
+- `newfront/miapp/src/App.jsx`
+
+### Backend
+Sin historial de chat en SQLite (solo usuarios / perfiles).
+
+---
+
 ## Resumen
 
 | Cambio | Front | Back |
@@ -128,3 +313,8 @@ Sin cambios de protocolo: se reutiliza el mismo `login` al reconectar.
 | Auth + chat real | Conecta y consume el protocolo | Endpoints/mensajes de chat |
 | Foto y descripción públicas | Envía `update_profile`, pinta `profiles` | Persiste en SQLite y difunde en `user_list` |
 | Sesión estable ~1 h | Guarda sesión, reconecta sola al caer el WS | Mismo `login` al reenganchar |
+| Estados + notis (bandeja + toast) | Ticks, badges, campana, toast glass; `read_receipt` | Reenvía `read_receipt` |
+| Nuevo mensaje / nuevo grupo | Menú +, directorio, grupos locales | `list_directory` / `directory`, `group_message` |
+| Archivos sala + grandes | `file` sin/`con` `to` | Broadcast sin `to` + reensamble WS |
+| Teléfono / PWA | Hostname + `VITE_WS_PORT`, viewport | Escucha en `5001` / LAN |
+| Chats locales sin historial | `localChats` en `localStorage` | Sin persistir mensajes |

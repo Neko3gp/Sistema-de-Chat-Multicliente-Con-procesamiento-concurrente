@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { FiPlus, FiSearch, FiSettings } from "react-icons/fi";
 import { getInitials, getNameColor } from "../utils/avatar";
-import NewChatDialog from "./NewChatDialog";
+import { chatKey } from "../utils/messageStatus";
+import ComposeMenu from "./ComposeMenu";
+import NewGroupDialog from "./NewGroupDialog";
+import NewMessageDialog from "./NewMessageDialog";
+import NotificationTray from "./NotificationTray";
 
 const FILTERS = ["Todos", "Conectados", "Sin conexión"];
 
@@ -48,19 +52,29 @@ export default function Sidebar({
   users,
   chatUsers = [],
   contacts = {},
+  customGroups = [],
   messages,
   selectedUser,
+  selectedGroupId = null,
   groupName = "Sala general",
   groupAvatarUrl = "",
+  unreadCounts = {},
+  notifications = [],
+  directoryUsers = [],
+  directoryLoading = false,
   onSelectUser,
+  onSelectGroup,
   onOpenProfile,
   onOpenSettings,
+  onRequestDirectory,
   onStartNewChat,
+  onCreateGroup,
+  onMarkAllNotificationsRead,
   onLogout,
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("Todos");
-  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [composeStep, setComposeStep] = useState(null);
 
   const privateUsers = Array.from(
     new Set([
@@ -78,12 +92,22 @@ export default function Sidebar({
       id: null,
       name: groupName,
       isBroadcast: true,
+      isGroup: false,
       avatarUrl: groupAvatarUrl,
     },
+    ...customGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      isBroadcast: false,
+      isGroup: true,
+      avatarUrl: group.avatarUrl || "",
+      members: group.members || [],
+    })),
     ...privateUsers.map((user) => ({
       id: user,
       name: user,
       isBroadcast: false,
+      isGroup: false,
       avatarUrl: contacts[user]?.avatarUrl || "",
     })),
   ];
@@ -96,37 +120,78 @@ export default function Sidebar({
           (message.type === "file" && !message.to)
         );
       }
+      if (entry.isGroup) {
+        return message.type === "group_message" && message.groupId === entry.id;
+      }
       return (
         (message.type === "private_message" || message.type === "file") &&
         (message.from === entry.id || message.to === entry.id)
       );
     });
     const last = related[related.length - 1] || null;
+    const key = entry.isGroup
+      ? chatKey(null, entry.id)
+      : chatKey(entry.isBroadcast ? null : entry.id);
+    const unread = unreadCounts[key] || 0;
 
     return {
       ...entry,
       lastMessage: getPreview(last),
       time: last ? formatTime(last.at ? new Date(last.at) : new Date()) : "",
-      unread: 0,
-      online: entry.isBroadcast ? false : users.includes(entry.id),
+      unread,
+      online: entry.isBroadcast || entry.isGroup ? false : users.includes(entry.id),
     };
   });
+
+  const totalUnread = Object.values(unreadCounts).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
 
   const visibleChats = chats.filter((chat) => {
     const matchesQuery = chat.name
       .toLowerCase()
       .includes(query.trim().toLowerCase());
     if (!matchesQuery) return false;
-    if (filter === "Conectados") return !chat.isBroadcast && chat.online;
-    if (filter === "Sin conexión") return !chat.isBroadcast && !chat.online;
+    if (filter === "Conectados") return !chat.isBroadcast && !chat.isGroup && chat.online;
+    if (filter === "Sin conexión") return !chat.isBroadcast && !chat.isGroup && !chat.online;
     return true;
   });
+
+  function openCompose(step) {
+    setComposeStep(step);
+    if (step === "message" || step === "group") {
+      onRequestDirectory?.();
+    }
+  }
+
+  function handleSelectChat(chat) {
+    if (chat.isGroup) {
+      onSelectGroup?.(chat.id);
+      return;
+    }
+    onSelectUser?.(chat.isBroadcast ? null : chat.id);
+  }
 
   return (
     <aside className="sidebar">
       <header className="sidebar-top">
         <h1>Chats</h1>
         <div className="sidebar-actions">
+          <NotificationTray
+            items={notifications}
+            totalUnread={totalUnread}
+            groupName={groupName}
+            onOpenChat={(item) => {
+              if (!item) return;
+              if (typeof item.chatKey === "string" && item.chatKey.startsWith("__group__:")) {
+                onSelectGroup?.(item.chatKey.slice("__group__:".length));
+                return;
+              }
+              onSelectUser?.(item.chatKey === "__broadcast__" ? null : item.chatKey);
+            }}
+            onMarkAllRead={onMarkAllNotificationsRead}
+          />
           <button
             type="button"
             className="icon-btn profile-entry"
@@ -191,16 +256,26 @@ export default function Sidebar({
           <li className="chat-empty">No hay chats en este filtro</li>
         ) : (
           visibleChats.map((chat) => {
-            const active =
-              (chat.isBroadcast && selectedUser === null) ||
-              selectedUser === chat.id;
+            const active = chat.isGroup
+              ? selectedGroupId === chat.id
+              : !selectedGroupId &&
+                ((chat.isBroadcast && selectedUser === null) ||
+                  selectedUser === chat.id);
 
             return (
-              <li key={chat.isBroadcast ? "broadcast" : chat.id}>
+              <li
+                key={
+                  chat.isBroadcast
+                    ? "broadcast"
+                    : chat.isGroup
+                      ? `group-${chat.id}`
+                      : chat.id
+                }
+              >
                 <button
                   type="button"
                   className={active ? "chat-item active" : "chat-item"}
-                  onClick={() => onSelectUser(chat.id)}
+                  onClick={() => handleSelectChat(chat)}
                 >
                   <AvatarWithStatus
                     name={chat.name}
@@ -210,7 +285,12 @@ export default function Sidebar({
 
                   <span className="chat-body">
                     <span className="chat-row">
-                      <span className="chat-name">{chat.name}</span>
+                      <span className="chat-name">
+                        {chat.name}
+                        {chat.isGroup ? (
+                          <span className="chat-kind">grupo</span>
+                        ) : null}
+                      </span>
                       <span className={chat.unread ? "chat-time unread" : "chat-time"}>
                         {chat.time}
                       </span>
@@ -232,17 +312,43 @@ export default function Sidebar({
       <button
         type="button"
         className="new-chat-fab"
-        title="Nuevo mensaje"
-        aria-label="Nuevo mensaje"
-        onClick={() => setNewChatOpen(true)}
+        title="Crear"
+        aria-label="Crear mensaje o grupo"
+        onClick={() => openCompose("menu")}
       >
         <FiPlus size={28} aria-hidden="true" />
       </button>
 
-      {newChatOpen ? (
-        <NewChatDialog
-          onClose={() => setNewChatOpen(false)}
-          onSubmit={onStartNewChat}
+      {composeStep === "menu" ? (
+        <ComposeMenu
+          onClose={() => setComposeStep(null)}
+          onNewMessage={() => openCompose("message")}
+          onNewGroup={() => openCompose("group")}
+        />
+      ) : null}
+
+      {composeStep === "message" ? (
+        <NewMessageDialog
+          onClose={() => setComposeStep(null)}
+          directoryUsers={directoryUsers}
+          onlineUsers={users}
+          loading={directoryLoading}
+          onSelectUser={(name) => {
+            const result = onStartNewChat?.(name);
+            if (!result?.error && result?.username) {
+              onSelectUser?.(result.username);
+            }
+          }}
+        />
+      ) : null}
+
+      {composeStep === "group" ? (
+        <NewGroupDialog
+          onClose={() => setComposeStep(null)}
+          directoryUsers={directoryUsers}
+          onlineUsers={users}
+          loading={directoryLoading}
+          onCreate={onCreateGroup}
         />
       ) : null}
     </aside>

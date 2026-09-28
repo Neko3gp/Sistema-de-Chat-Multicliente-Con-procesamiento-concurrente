@@ -107,6 +107,33 @@ export function sendUpdateProfile({ avatarUrl = "", description = "" } = {}) {
   );
 }
 
+export function sendReadReceipt(chat) {
+  const payload = { type: "read_receipt" };
+  if (chat) payload.chat = chat;
+  else payload.chat = null;
+  socket?.send(JSON.stringify(payload));
+}
+
+export function requestDirectory() {
+  socket?.send(JSON.stringify({ type: "list_directory" }));
+}
+
+export function sendGroupMessage({ groupId, groupName = "", members = [], message }) {
+  socket?.send(
+    JSON.stringify({
+      type: "group_message",
+      groupId,
+      groupName,
+      members,
+      message,
+    }),
+  );
+}
+
+export function isSocketOpen() {
+  return Boolean(socket && socket.readyState === WebSocket.OPEN);
+}
+
 export function disconnectSocket({ silent = false } = {}) {
   if (!socket) return;
   if (silent) suppressCloseEvent = true;

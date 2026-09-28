@@ -1,9 +1,11 @@
 import { getInitials, getNameColor } from "../utils/avatar";
+import MessageStatus from "./MessageStatus";
 
 export default function Message({ message, currentUser, avatarUrl = "" }) {
   const mine = message.from === currentUser;
   const isPrivate = message.type === "private_message";
-  const isGroup = message.type === "broadcast";
+  const isGroup =
+    message.type === "broadcast" || message.type === "group_message";
   const author = message.from || "sistema";
   const authorColor = getNameColor(author);
   const time = new Date(message.at || Date.now()).toLocaleTimeString("es-MX", {
@@ -43,11 +45,7 @@ export default function Message({ message, currentUser, avatarUrl = "" }) {
         <p className="bubble-text">{message.message}</p>
         <footer className="bubble-meta">
           <time>{time}</time>
-          {mine ? (
-            <span className="ticks" aria-hidden="true">
-              ✓✓
-            </span>
-          ) : null}
+          <MessageStatus status={message.status} mine={mine} />
         </footer>
       </article>
     </div>

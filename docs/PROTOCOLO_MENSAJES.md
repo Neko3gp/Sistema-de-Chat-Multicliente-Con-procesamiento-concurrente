@@ -59,6 +59,57 @@ Si supera ese límite, se responde `{"type":"error","reason":"file_too_large"}`
 sin reenviar el archivo. Si `data` falta o no contiene base64 válido, se responde
 `{"type":"error","reason":"invalid_message"}`.
 
+### Directorio de usuarios registrados
+```json
+{ "type": "list_directory" }
+```
+
+Respuesta (sin admins; excluye al solicitante):
+
+```json
+{
+  "type": "directory",
+  "users": [
+    { "username": "Ana", "avatarUrl": "", "description": "Hola" }
+  ]
+}
+```
+
+### Mensaje de grupo
+```json
+{
+  "type": "group_message",
+  "groupId": "abc-123",
+  "groupName": "Equipo frontend",
+  "members": ["Ana", "Carlos", "Luis"],
+  "message": "Reunión a las 5"
+}
+```
+
+El servidor añade `from` y reenvía a cada miembro conectado de `members`
+(excepto el emisor). Los grupos se crean en el cliente; este mensaje solo
+distribuye el texto.
+
+### Confirmación de lectura (visto)
+```json
+{ "type": "read_receipt", "chat": "Usuario2" }
+```
+
+Indica que el emisor abrió y leyó esa conversación. `chat` es el usuario del
+chat privado. Para la sala general usar `null` (o omitir / `"broadcast"`):
+
+```json
+{ "type": "read_receipt", "chat": null }
+```
+
+El servidor reenvía al interesado:
+
+- Privado: solo a `chat`, con
+  `{"type":"read_receipt","from":"<lector>","chat":"<lector>"}`
+  (tus mensajes hacia ese lector se marcan como vistos).
+- Sala general: broadcast a los demás con
+  `{"type":"read_receipt","from":"<lector>","chat":null}`.
+
 ## Servidor → Cliente
 
 El servidor agrega el campo `from` a los mensajes que reenvía:

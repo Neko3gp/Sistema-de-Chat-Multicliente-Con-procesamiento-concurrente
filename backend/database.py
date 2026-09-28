@@ -151,6 +151,29 @@ def get_public_profiles(usernames):
     return profiles
 
 
+def list_directory_users(exclude_username=None):
+    """Usuarios de chat registrados (sin admins), con perfil público."""
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        rows = conn.execute(
+            """
+            SELECT username, avatar_url, description
+            FROM users
+            WHERE role = 'user'
+            ORDER BY username COLLATE NOCASE
+            """
+        ).fetchall()
+    users = []
+    for username, avatar_url, description in rows:
+        if exclude_username and username == exclude_username:
+            continue
+        users.append({
+            "username": username,
+            "avatarUrl": avatar_url or "",
+            "description": description or "",
+        })
+    return users
+
+
 def update_user_profile(username, avatar_url="", description=""):
     """Actualiza avatar/descripción. Devuelve el perfil o None si es inválido."""
     avatar = _normalize_avatar_url(avatar_url)

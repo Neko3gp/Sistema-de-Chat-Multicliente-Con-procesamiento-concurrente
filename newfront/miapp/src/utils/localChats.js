@@ -9,13 +9,37 @@ function readAll() {
   }
 }
 
+function normalizeGroup(group, owner) {
+  if (!group || typeof group !== "object") return null;
+  const id = typeof group.id === "string" ? group.id.trim() : "";
+  const name = typeof group.name === "string" ? group.name.trim() : "";
+  if (!id || !name) return null;
+  const members = Array.isArray(group.members)
+    ? Array.from(
+        new Set(
+          group.members.filter(
+            (m) => typeof m === "string" && m.trim() && m !== owner,
+          ),
+        ),
+      )
+    : [];
+  return {
+    id,
+    name,
+    avatarUrl: typeof group.avatarUrl === "string" ? group.avatarUrl : "",
+    description: typeof group.description === "string" ? group.description : "",
+    admin: typeof group.admin === "string" ? group.admin : owner,
+    members: owner ? Array.from(new Set([owner, ...members])) : members,
+  };
+}
+
 export function loadLocalChats(owner) {
   if (!owner) {
-    return { chatUsers: [], contacts: {} };
+    return { chatUsers: [], contacts: {}, customGroups: [] };
   }
   const entry = readAll()[owner];
   if (!entry || typeof entry !== "object") {
-    return { chatUsers: [], contacts: {} };
+    return { chatUsers: [], contacts: {}, customGroups: [] };
   }
 
   const chatUsers = Array.isArray(entry.chatUsers)
@@ -48,10 +72,19 @@ export function loadLocalChats(owner) {
     }
   }
 
-  return { chatUsers, contacts };
+  const customGroups = Array.isArray(entry.customGroups)
+    ? entry.customGroups
+        .map((group) => normalizeGroup(group, owner))
+        .filter(Boolean)
+    : [];
+
+  return { chatUsers, contacts, customGroups };
 }
 
-export function saveLocalChats(owner, { chatUsers = [], contacts = {} } = {}) {
+export function saveLocalChats(
+  owner,
+  { chatUsers = [], contacts = {}, customGroups = [] } = {},
+) {
   if (!owner) return;
   const all = readAll();
   const names = Array.from(
@@ -77,6 +110,14 @@ export function saveLocalChats(owner, { chatUsers = [], contacts = {} } = {}) {
     };
   }
 
-  all[owner] = { chatUsers: names, contacts: compactContacts };
+  const groups = (customGroups || [])
+    .map((group) => normalizeGroup(group, owner))
+    .filter(Boolean);
+
+  all[owner] = {
+    chatUsers: names,
+    contacts: compactContacts,
+    customGroups: groups,
+  };
   localStorage.setItem(CHATS_KEY, JSON.stringify(all));
 }

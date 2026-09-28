@@ -182,7 +182,11 @@ export default function MessageInput({ selectedUser, onSend, onSendFile }) {
                   : "Mensaje para todos..."
               }
               disabled={sending}
-              onFocus={() => setPickerOpen(false)}
+              onFocus={() => {
+                setPickerOpen(false);
+                window.scrollTo(0, 0);
+                requestAnimationFrame(() => window.scrollTo(0, 0));
+              }}
             />
           )}
           {error ? <p className="input-error">{error}</p> : null}

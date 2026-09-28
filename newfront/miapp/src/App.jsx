@@ -11,13 +11,25 @@ import {
   sendBroadcast,
   sendPrivateMessage,
   sendFile,
+  sendGroupMessage,
   sendUpdateProfile,
+  sendReadReceipt,
+  requestDirectory,
+  isSocketOpen,
   disconnectSocket,
 } from "./services/socket";
 import { groups as mockGroups } from "./data/conversations";
 import { fileToBase64 } from "./utils/files";
 import { loadLocalChats, saveLocalChats } from "./utils/localChats";
 import { loadLocalProfile, saveLocalProfile } from "./utils/localProfile";
+import {
+  chatKey,
+  createMessageId,
+  groupKeyFromChatKey,
+  messageChatKey,
+  truncateText,
+} from "./utils/messageStatus";
+import IncomingToast from "./components/IncomingToast";
 import {
   clearSession,
   loadSession,
@@ -31,6 +43,10 @@ import {
   resolveTheme,
   saveThemePreference,
 } from "./utils/theme";
+import {
+  loadUnreadStore,
+  saveUnreadStore,
+} from "./utils/unreadStore";
 import "./App.css";
 
 const EMPTY_GROUPS = {
@@ -94,10 +110,19 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
   const [viewedContact, setViewedContact] = useState(null);
   const [groupsData, setGroupsData] = useState(EMPTY_GROUPS);
   const [contacts, setContacts] = useState({});
   const [chatUsers, setChatUsers] = useState([]);
+  const [customGroups, setCustomGroups] = useState([]);
+  const [directoryUsers, setDirectoryUsers] = useState([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [incomingToast, setIncomingToast] = useState(null);
+  const [openChatNonce, setOpenChatNonce] = useState(0);
+  const [isViewingChat, setIsViewingChat] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
@@ -109,8 +134,20 @@ export default function App() {
   const reconnectTimerRef = useRef(null);
   const intentionalCloseRef = useRef(false);
   const messageHandlerRef = useRef(null);
+  const selectedUserRef = useRef(null);
+  const selectedGroupIdRef = useRef(null);
+  const isViewingChatRef = useRef(false);
+  const groupNameRef = useRef("Sala general");
+  const contactsRef = useRef({});
+  const customGroupsRef = useRef([]);
 
   const generalGroup = groupsData.general;
+  groupNameRef.current = generalGroup?.name || "Sala general";
+  selectedUserRef.current = selectedUser;
+  selectedGroupIdRef.current = selectedGroupId;
+  isViewingChatRef.current = isViewingChat;
+  contactsRef.current = contacts;
+  customGroupsRef.current = customGroups;
 
   const inApp =
     authenticated &&
@@ -165,8 +202,13 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !username) return;
-    saveLocalChats(username, { chatUsers, contacts });
-  }, [authenticated, username, chatUsers, contacts]);
+    saveLocalChats(username, { chatUsers, contacts, customGroups });
+  }, [authenticated, username, chatUsers, contacts, customGroups]);
+
+  useEffect(() => {
+    if (!authenticated || !username) return;
+    saveUnreadStore(username, unreadCounts, notifications);
+  }, [authenticated, username, unreadCounts, notifications]);
 
   useEffect(() => {
     const session = loadSession();
@@ -182,6 +224,171 @@ export default function App() {
       clearReconnectTimer();
     };
   }, []);
+
+  function previewFromMessage(message) {
+    if (message.type === "file") return message.filename || "Archivo";
+    return message.message || "Nuevo mensaje";
+  }
+
+  function markChatRead(user = null, groupId = null) {
+    const key = chatKey(user, groupId);
+    setUnreadCounts((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.chatKey === key ? { ...item, read: true } : item,
+      ),
+    );
+    if (!groupId && isSocketOpen()) {
+      sendReadReceipt(user || null);
+    }
+  }
+
+  function handleSelectUser(user) {
+    setSelectedGroupId(null);
+    setSelectedUser(user);
+    setIsViewingChat(true);
+    markChatRead(user, null);
+  }
+
+  function handleSelectGroup(groupId) {
+    setSelectedUser(null);
+    setSelectedGroupId(groupId);
+    setIsViewingChat(true);
+    markChatRead(null, groupId);
+  }
+
+  function handleLeaveChatView() {
+    setIsViewingChat(false);
+  }
+
+  function handleViewingChange(viewing) {
+    const wasViewing = isViewingChatRef.current;
+    setIsViewingChat(viewing);
+    if (viewing && !wasViewing) {
+      markChatRead(selectedUserRef.current, selectedGroupIdRef.current);
+    }
+  }
+
+  function handleMarkAllNotificationsRead() {
+    setUnreadCounts({});
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  }
+
+  function dismissIncomingToast(id) {
+    setIncomingToast((prev) => (prev && prev.id === id ? null : prev));
+  }
+
+  function openIncomingToast(toast) {
+    if (!toast) return;
+    setIncomingToast(null);
+    setView("home");
+    const groupId = groupKeyFromChatKey(toast.chatKey);
+    if (groupId) {
+      handleSelectGroup(groupId);
+    } else {
+      const user = toast.chatKey === "__broadcast__" ? null : toast.chatKey;
+      handleSelectUser(user);
+    }
+    setOpenChatNonce((n) => n + 1);
+  }
+
+  function ensureCustomGroupFromMessage(message) {
+    if (message.type !== "group_message" || !message.groupId) return;
+    const id = message.groupId;
+    const me = usernameRef.current;
+    setCustomGroups((prev) => {
+      if (prev.some((g) => g.id === id)) {
+        return prev.map((g) => {
+          if (g.id !== id) return g;
+          const members = Array.from(
+            new Set([...(g.members || []), ...(message.members || []), me].filter(Boolean)),
+          );
+          return {
+            ...g,
+            name: message.groupName || g.name,
+            members,
+          };
+        });
+      }
+      return [
+        ...prev,
+        {
+          id,
+          name: message.groupName || "Grupo",
+          avatarUrl: "",
+          description: "",
+          admin: message.from || me,
+          members: Array.from(
+            new Set([...(message.members || []), me].filter(Boolean)),
+          ),
+        },
+      ];
+    });
+  }
+
+  function pushIncomingUnread(message) {
+    const me = usernameRef.current;
+    if (!message.from || message.from === me) return;
+
+    const key = messageChatKey(message, me);
+    const viewingKey = chatKey(selectedUserRef.current, selectedGroupIdRef.current);
+    const viewingThis =
+      isViewingChatRef.current && key === viewingKey;
+
+    if (viewingThis) {
+      if (!groupKeyFromChatKey(key) && isSocketOpen()) {
+        sendReadReceipt(selectedUserRef.current || null);
+      }
+      return;
+    }
+
+    const groupId = groupKeyFromChatKey(key);
+    const label = groupId
+      ? (message.groupName || customGroupsRef.current.find((g) => g.id === groupId)?.name || "Grupo")
+      : key === "__broadcast__"
+        ? groupNameRef.current
+        : message.from;
+    const rawPreview = previewFromMessage(message);
+    const preview =
+      key === "__broadcast__" || groupId
+        ? truncateText(`${message.from}: ${rawPreview}`, 72)
+        : truncateText(rawPreview, 72);
+    const toastId = createMessageId();
+    const avatarUrl = contactsRef.current[message.from]?.avatarUrl || "";
+
+    setUnreadCounts((prev) => ({
+      ...prev,
+      [key]: (prev[key] || 0) + 1,
+    }));
+    setNotifications((prev) =>
+      [
+        {
+          id: toastId,
+          chatKey: key,
+          chatLabel: label,
+          from: message.from,
+          preview,
+          at: new Date(),
+          read: false,
+        },
+        ...prev,
+      ].slice(0, 40),
+    );
+    setIncomingToast({
+      id: toastId,
+      chatKey: key,
+      from: message.from,
+      chatLabel: label,
+      avatarUrl,
+      preview,
+      context: key === "__broadcast__" ? groupNameRef.current : null,
+    });
+  }
 
   function openOwnProfile(from = "home") {
     setViewedContact(null);
@@ -238,7 +445,7 @@ export default function App() {
   }
 
   function handleStartNewChat(query) {
-    const raw = query.trim();
+    const raw = String(query || "").trim();
     const q = raw.toLowerCase();
 
     if (!q) {
@@ -250,10 +457,25 @@ export default function App() {
     }
 
     let contactName = findContactByQuery(raw);
-
     if (!contactName) {
-      contactName = raw;
-      ensureContact(contactName);
+      const fromDirectory = directoryUsers.find(
+        (user) => (user.username || "").toLowerCase() === q,
+      );
+      contactName = fromDirectory?.username || raw;
+    }
+
+    ensureContact(contactName);
+    const profile = directoryUsers.find((user) => user.username === contactName);
+    if (profile) {
+      setContacts((prev) => ({
+        ...prev,
+        [contactName]: {
+          ...(prev[contactName] || stubContact(contactName)),
+          username: contactName,
+          description: profile.description || prev[contactName]?.description || "",
+          avatarUrl: profile.avatarUrl || prev[contactName]?.avatarUrl || "",
+        },
+      }));
     }
 
     setChatUsers((prev) =>
@@ -261,6 +483,41 @@ export default function App() {
     );
 
     return { username: contactName };
+  }
+
+  function handleRequestDirectory() {
+    if (!isSocketOpen()) {
+      setDirectoryLoading(false);
+      return;
+    }
+    setDirectoryLoading(true);
+    requestDirectory();
+  }
+
+  function handleCreateGroup({ name, members }) {
+    const groupName = String(name || "").trim();
+    const memberList = Array.isArray(members) ? members.filter(Boolean) : [];
+    if (!groupName) return { error: "Escribe el nombre del grupo" };
+    if (memberList.length === 0) return { error: "Añade al menos un integrante" };
+
+    const id = createMessageId();
+    const group = {
+      id,
+      name: groupName,
+      avatarUrl: "",
+      description: "",
+      admin: username,
+      members: Array.from(new Set([username, ...memberList])),
+    };
+
+    for (const member of memberList) {
+      ensureContact(member);
+    }
+
+    setCustomGroups((prev) => [...prev, group]);
+    handleSelectGroup(id);
+    setOpenChatNonce((n) => n + 1);
+    return { group };
   }
 
   function openContactProfile(contactName, from = "home") {
@@ -278,6 +535,19 @@ export default function App() {
   }
 
   function openGroupInfo(groupId = "general") {
+    if (groupId && groupId !== "general") {
+      const custom = customGroups.find((group) => group.id === groupId);
+      if (custom) {
+        setViewedContact(null);
+        setViewedGroup({
+          ...custom,
+          members: custom.members?.length ? custom.members : [username],
+        });
+        setReturnView("home");
+        setView("group");
+        return;
+      }
+    }
     const base = groupsData[groupId] || groupsData.general;
     setViewedContact(null);
     setViewedGroup({
@@ -291,6 +561,16 @@ export default function App() {
   function handleSaveGroup(nextGroup) {
     if (!nextGroup?.id) return;
     if (nextGroup.admin !== username) return;
+
+    if (nextGroup.id !== "general") {
+      setCustomGroups((prev) =>
+        prev.map((group) =>
+          group.id === nextGroup.id ? { ...group, ...nextGroup } : group,
+        ),
+      );
+      setViewedGroup(nextGroup);
+      return;
+    }
 
     setGroupsData((prev) => ({
       ...prev,
@@ -324,11 +604,19 @@ export default function App() {
     setUsers([]);
     setMessages([]);
     setSelectedUser(null);
+    setSelectedGroupId(null);
     setViewedContact(null);
     setViewedGroup(null);
     setGroupsData(EMPTY_GROUPS);
     setContacts({});
     setChatUsers([]);
+    setCustomGroups([]);
+    setDirectoryUsers([]);
+    setDirectoryLoading(false);
+    setUnreadCounts({});
+    setNotifications([]);
+    setIncomingToast(null);
+    setIsViewingChat(false);
     setSuccess("");
     setError(keepAuthError);
   }
@@ -381,10 +669,17 @@ export default function App() {
 
           if (!wasAuthenticated) {
             const saved = loadLocalChats(usernameRef.current);
+            const unread = loadUnreadStore(usernameRef.current);
             setMessages([]);
             setUsers([]);
             setChatUsers(saved.chatUsers);
             setContacts(saved.contacts);
+            setCustomGroups(saved.customGroups || []);
+            setDirectoryUsers([]);
+            setUnreadCounts(unread.counts);
+            setNotifications(unread.items);
+            setSelectedGroupId(null);
+            setIsViewingChat(false);
             setGroupsData({
               general: {
                 ...EMPTY_GROUPS.general,
@@ -475,18 +770,78 @@ export default function App() {
         refreshSession();
         break;
       }
+      case "directory": {
+        const list = Array.isArray(message.users) ? message.users : [];
+        setDirectoryUsers(
+          list
+            .filter((user) => user && typeof user.username === "string")
+            .map((user) => ({
+              username: user.username,
+              avatarUrl: typeof user.avatarUrl === "string" ? user.avatarUrl : "",
+              description:
+                typeof user.description === "string" ? user.description : "",
+            })),
+        );
+        setDirectoryLoading(false);
+        refreshSession();
+        break;
+      }
       case "broadcast":
       case "private_message":
       case "file":
+      case "group_message":
+        if (message.type === "group_message") {
+          ensureCustomGroupFromMessage(message);
+        }
         if (message.from && message.from !== usernameRef.current) {
           ensureContact(message.from);
-          setChatUsers((prev) =>
-            prev.includes(message.from) ? prev : [...prev, message.from],
-          );
+          if (message.type !== "group_message") {
+            setChatUsers((prev) =>
+              prev.includes(message.from) ? prev : [...prev, message.from],
+            );
+          }
+          pushIncomingUnread(message);
         }
-        setMessages((prev) => [...prev, { ...message, at: new Date() }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            ...message,
+            id: message.id || createMessageId(),
+            at: new Date(),
+            status: message.from === usernameRef.current ? "sent" : undefined,
+          },
+        ]);
         refreshSession();
         break;
+      case "read_receipt": {
+        const reader = message.from;
+        const me = usernameRef.current;
+        if (!reader || reader === me) break;
+        setMessages((prev) =>
+          prev.map((item) => {
+            if (item.from !== me) return item;
+            if (item.status === "seen") return item;
+            if (message.chat == null) {
+              if (
+                item.type === "broadcast" ||
+                (item.type === "file" && !item.to)
+              ) {
+                return { ...item, status: "seen" };
+              }
+              return item;
+            }
+            if (
+              (item.type === "private_message" || item.type === "file") &&
+              item.to === reader
+            ) {
+              return { ...item, status: "seen" };
+            }
+            return item;
+          }),
+        );
+        refreshSession();
+        break;
+      }
       case "connection_closed":
         if (intentionalCloseRef.current) {
           intentionalCloseRef.current = false;
@@ -561,37 +916,72 @@ export default function App() {
   }
 
   function handleSend(text) {
-    const payload = selectedUser
-      ? {
-          type: "private_message",
-          from: username,
-          to: selectedUser,
-          message: text,
-          at: new Date(),
-        }
-      : {
-          type: "broadcast",
-          from: username,
-          message: text,
-          at: new Date(),
-        };
+    const id = createMessageId();
+    const open = isSocketOpen();
+    const activeGroup = selectedGroupId
+      ? customGroups.find((group) => group.id === selectedGroupId)
+      : null;
 
-    if (selectedUser) {
-      sendPrivateMessage(selectedUser, text);
+    let payload;
+    if (activeGroup) {
+      payload = {
+        id,
+        type: "group_message",
+        from: username,
+        groupId: activeGroup.id,
+        groupName: activeGroup.name,
+        members: activeGroup.members || [],
+        message: text,
+        at: new Date(),
+        status: open ? "sent" : "failed",
+      };
+      if (open) {
+        sendGroupMessage({
+          groupId: activeGroup.id,
+          groupName: activeGroup.name,
+          members: activeGroup.members || [],
+          message: text,
+        });
+      }
+    } else if (selectedUser) {
+      payload = {
+        id,
+        type: "private_message",
+        from: username,
+        to: selectedUser,
+        message: text,
+        at: new Date(),
+        status: open ? "sent" : "failed",
+      };
+      if (open) sendPrivateMessage(selectedUser, text);
     } else {
-      sendBroadcast(text);
+      payload = {
+        id,
+        type: "broadcast",
+        from: username,
+        message: text,
+        at: new Date(),
+        status: open ? "sent" : "failed",
+      };
+      if (open) sendBroadcast(text);
     }
 
     setMessages((prev) => [...prev, payload]);
   }
 
   async function handleSendFile(file) {
+    if (selectedGroupId) {
+      throw new Error("Los archivos en grupos aún no están disponibles");
+    }
     if (selectedUser && !users.includes(selectedUser)) {
       throw new Error("user_not_found");
     }
 
     const data = await fileToBase64(file);
+    const id = createMessageId();
+    const open = isSocketOpen();
     const payload = {
+      id,
       type: "file",
       from: username,
       to: selectedUser || null,
@@ -599,9 +989,12 @@ export default function App() {
       mimeType: file.type || undefined,
       data,
       at: new Date(),
+      status: open ? "sent" : "failed",
     };
 
-    sendFile(selectedUser || null, file.name, data);
+    if (open) {
+      sendFile(selectedUser || null, file.name, data);
+    }
     setMessages((prev) => [...prev, payload]);
   }
 
@@ -641,17 +1034,32 @@ export default function App() {
             Reconectando sesión…
           </div>
         ) : null}
+        <IncomingToast
+          toast={incomingToast}
+          onOpen={openIncomingToast}
+          onDismiss={dismissIncomingToast}
+        />
         <Home
           username={username}
           avatarUrl={avatarUrl}
           users={users}
           messages={messages}
           selectedUser={selectedUser}
+          selectedGroupId={selectedGroupId}
+          customGroups={customGroups}
           groupName={generalGroup?.name || "Sala general"}
           groupAvatarUrl={generalGroup?.avatarUrl || ""}
           chatUsers={chatUsers}
           contacts={contacts}
-          onSelectUser={setSelectedUser}
+          unreadCounts={unreadCounts}
+          notifications={notifications}
+          directoryUsers={directoryUsers}
+          directoryLoading={directoryLoading}
+          openChatNonce={openChatNonce}
+          onSelectUser={handleSelectUser}
+          onSelectGroup={handleSelectGroup}
+          onLeaveChatView={handleLeaveChatView}
+          onViewingChange={handleViewingChange}
           onSend={handleSend}
           onSendFile={handleSendFile}
           onOpenProfile={() => openOwnProfile("home")}
@@ -659,6 +1067,9 @@ export default function App() {
           onOpenGroupInfo={openGroupInfo}
           onOpenSettings={openSettings}
           onStartNewChat={handleStartNewChat}
+          onCreateGroup={handleCreateGroup}
+          onRequestDirectory={handleRequestDirectory}
+          onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
           onLogout={handleLogout}
         />
 

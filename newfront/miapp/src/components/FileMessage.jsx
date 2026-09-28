@@ -1,6 +1,7 @@
 import { FiFile } from "react-icons/fi";
 import { getInitials, getNameColor } from "../utils/avatar";
 import { buildFileDataUrl, getFileKind } from "../utils/files";
+import MessageStatus from "./MessageStatus";
 
 export default function FileMessage({ message, currentUser, avatarUrl = "" }) {
   const mine = message.from === currentUser;
@@ -86,11 +87,7 @@ export default function FileMessage({ message, currentUser, avatarUrl = "" }) {
 
         <footer className="bubble-meta">
           <time>{time}</time>
-          {mine ? (
-            <span className="ticks" aria-hidden="true">
-              ✓✓
-            </span>
-          ) : null}
+          <MessageStatus status={message.status} mine={mine} />
         </footer>
       </article>
     </div>

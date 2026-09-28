@@ -1,12 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Message from "../components/Message";
 import FileMessage from "../components/FileMessage";
 import MessageInput from "../components/MessageInput";
 import { getInitials, getNameColor } from "../utils/avatar";
 
-function filterMessages(messages, username, selectedUser) {
+function filterMessages(messages, username, selectedUser, selectedGroupId) {
   return messages.filter((message) => {
+    if (selectedGroupId) {
+      return (
+        message.type === "group_message" && message.groupId === selectedGroupId
+      );
+    }
+
     if (selectedUser === null) {
       return (
         message.type === "broadcast" ||
@@ -29,9 +35,14 @@ export default function Home({
   users,
   messages,
   selectedUser,
+  selectedGroupId = null,
+  customGroups = [],
   groupName = "Sala general",
   groupAvatarUrl = "",
   onSelectUser,
+  onSelectGroup,
+  onLeaveChatView,
+  onViewingChange,
   onSend,
   onSendFile,
   onOpenProfile,
@@ -39,23 +50,68 @@ export default function Home({
   onOpenGroupInfo,
   onOpenSettings,
   onStartNewChat,
+  onCreateGroup,
+  onRequestDirectory,
+  onMarkAllNotificationsRead,
   chatUsers,
   contacts = {},
+  unreadCounts = {},
+  notifications = [],
+  directoryUsers = [],
+  directoryLoading = false,
+  openChatNonce = 0,
   onLogout,
 }) {
   const [chatOpen, setChatOpen] = useState(false);
 
-  const title = selectedUser ? selectedUser : groupName;
-  const visibleMessages = filterMessages(messages, username, selectedUser);
+  const activeGroup = selectedGroupId
+    ? customGroups.find((group) => group.id === selectedGroupId)
+    : null;
+  const title = activeGroup
+    ? activeGroup.name
+    : selectedUser
+      ? selectedUser
+      : groupName;
+  const visibleMessages = filterMessages(
+    messages,
+    username,
+    selectedUser,
+    selectedGroupId,
+  );
   const layoutClass = chatOpen ? "home-layout chat-open" : "home-layout list-open";
   const contactOnline = selectedUser ? users.includes(selectedUser) : false;
-  const memberCount = users.length;
-  const headerAvatarUrl = selectedUser
-    ? contacts[selectedUser]?.avatarUrl || ""
-    : groupAvatarUrl;
+  const memberCount = activeGroup
+    ? (activeGroup.members || []).length
+    : users.length;
+  const headerAvatarUrl = activeGroup
+    ? activeGroup.avatarUrl || ""
+    : selectedUser
+      ? contacts[selectedUser]?.avatarUrl || ""
+      : groupAvatarUrl;
+
+  useEffect(() => {
+    if (openChatNonce > 0) setChatOpen(true);
+  }, [openChatNonce]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(min-width: 721px)");
+    const sync = () => {
+      onViewingChange?.(mq.matches || chatOpen);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen]);
 
   function handleSelectChat(user) {
     onSelectUser(user);
+    setChatOpen(true);
+  }
+
+  function handleSelectGroupChat(groupId) {
+    onSelectGroup?.(groupId);
     setChatOpen(true);
   }
 
@@ -69,11 +125,25 @@ export default function Home({
     return result;
   }
 
+  function handleCreateGroup(payload) {
+    const result = onCreateGroup?.(payload);
+    if (result?.error) return result;
+    if (result?.group?.id) {
+      setChatOpen(true);
+    }
+    return result;
+  }
+
   function handleBackToList() {
     setChatOpen(false);
+    onLeaveChatView?.();
   }
 
   function handleOpenHeaderProfile() {
+    if (activeGroup) {
+      onOpenGroupInfo?.(activeGroup.id);
+      return;
+    }
     if (selectedUser) {
       onOpenContactProfile(selectedUser);
       return;
@@ -89,14 +159,24 @@ export default function Home({
         users={users}
         chatUsers={chatUsers}
         contacts={contacts}
+        customGroups={customGroups}
         messages={messages}
         selectedUser={selectedUser}
+        selectedGroupId={selectedGroupId}
         groupName={groupName}
         groupAvatarUrl={groupAvatarUrl}
+        unreadCounts={unreadCounts}
+        notifications={notifications}
+        directoryUsers={directoryUsers}
+        directoryLoading={directoryLoading}
         onSelectUser={handleSelectChat}
+        onSelectGroup={handleSelectGroupChat}
         onOpenProfile={onOpenProfile}
         onOpenSettings={onOpenSettings}
         onStartNewChat={handleStartNewChat}
+        onCreateGroup={handleCreateGroup}
+        onRequestDirectory={onRequestDirectory}
+        onMarkAllNotificationsRead={onMarkAllNotificationsRead}
         onLogout={onLogout}
       />
 
@@ -140,11 +220,13 @@ export default function Home({
           <div className="header-info">
             <h1>{title}</h1>
             <p className={selectedUser && contactOnline ? "status-online" : ""}>
-              {selectedUser
-                ? contactOnline
-                  ? "en línea"
-                  : "visto hace poco"
-                : `Grupo · ${memberCount} conectados`}
+              {activeGroup
+                ? `Grupo · ${memberCount} integrantes`
+                : selectedUser
+                  ? contactOnline
+                    ? "en línea"
+                    : "visto hace poco"
+                  : `Grupo · ${memberCount} conectados`}
             </p>
           </div>
         </header>
@@ -156,14 +238,14 @@ export default function Home({
             visibleMessages.map((message, index) =>
               message.type === "file" ? (
                 <FileMessage
-                  key={index}
+                  key={message.id || `file-${index}`}
                   message={message}
                   currentUser={username}
                   avatarUrl={contacts[message.from]?.avatarUrl || ""}
                 />
               ) : (
                 <Message
-                  key={index}
+                  key={message.id || `msg-${index}`}
                   message={message}
                   currentUser={username}
                   avatarUrl={contacts[message.from]?.avatarUrl || ""}
@@ -174,7 +256,7 @@ export default function Home({
         </section>
 
         <MessageInput
-          selectedUser={selectedUser}
+          selectedUser={selectedUser || selectedGroupId}
           onSend={onSend}
           onSendFile={onSendFile}
         />
