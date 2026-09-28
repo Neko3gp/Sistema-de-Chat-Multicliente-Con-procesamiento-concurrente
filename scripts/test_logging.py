@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def temporary_server():
+def temporary_server(users=2, server_timeout=30):
     """Siembra tres cuentas y cierra siempre el servidor temporal con timeout."""
     with tempfile.TemporaryDirectory(prefix="chat-monitor-") as directory:
         env = {**os.environ, "CHAT_DB_PATH": str(Path(directory) / "chat.db"),
                "CHAT_LOG_DIR": str(Path(directory) / "logs"),
                "CHAT_ADMIN_PASSWORD": "admin-test"}
-        subprocess.run([sys.executable, str(ROOT / "scripts/seed_users.py"), "--count", "2"],
+        subprocess.run([sys.executable, str(ROOT / "scripts/seed_users.py"), "--count", str(users)],
                        env=env, cwd=directory, check=True, capture_output=True, timeout=15)
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
@@ -33,7 +33,7 @@ def temporary_server():
         )
         with tempfile.TemporaryFile(mode="w+") as console:
             process = subprocess.Popen(
-                ["timeout", "30s", sys.executable, "-u", "-c", code,
+                ["timeout", f"{server_timeout}s", sys.executable, "-u", "-c", code,
                  str(ROOT / "backend"), str(port)],
                 env=env, cwd=directory, stdout=console, stderr=console,
             )
