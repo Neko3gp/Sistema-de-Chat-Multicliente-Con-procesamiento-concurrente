@@ -5,6 +5,9 @@
    handshake». Añadir cola de salida de 1000 mensajes y explicar que el worker
    distribuye sin escribir en los sockets. Mantener TCP, WebSocket manual,
    threading, locks, Queue y SQLite. Añadir MonitorHub separado del chat.
+   Incorporar la validación base64 por bloques en el lector, la serialización
+   de metadatos del archivo y el desenmascarado por tablas como correcciones
+   motivadas por la medición de latencia de T10.
 2. **Hilos activos.** Usar `2 × (C + A) + 4` en régimen estable, con C usuarios
    y A administradores; para 20 + 1 se esperan 46. Los cuatro son principal,
    queue-worker, monitor-hub y monitor-stats. Considerar conexiones aún sin

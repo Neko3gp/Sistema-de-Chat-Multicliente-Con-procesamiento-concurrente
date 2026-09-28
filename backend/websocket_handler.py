@@ -6,8 +6,10 @@ socket.socket() que ya maneja threading, sin necesitar librerías externas.
 import base64
 import hashlib
 import struct
+import time
 
 WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+MASK_TABLES = tuple(bytes(value ^ key for value in range(256)) for key in range(256))
 
 
 def do_handshake(client_socket):
@@ -71,7 +73,19 @@ def recv_frame(client_socket):
         return None
 
     if masked and payload:
-        payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+        # La máscara se repite cada cuatro bytes. translate ejecuta el XOR
+        # tabulado en C y evita millones de iteraciones Python con el GIL.
+        # Procesar bloques limita cuánto tiempo retenemos el GIL por operación.
+        decoded = bytearray(payload)
+        for start in range(0, len(payload), 64 * 1024):
+            end = min(start + 64 * 1024, len(payload))
+            for offset, key in enumerate(mask_key):
+                decoded[start + offset:end:4] = payload[start + offset:end:4].translate(MASK_TABLES[key])
+            if len(payload) > 64 * 1024:
+                # Ceder explícitamente permite atender mensajes cortos entre
+                # bloques, incluso si este hilo vuelve a adquirir el GIL.
+                time.sleep(0)
+        payload = decoded
 
     return payload.decode("utf-8") if payload else ""
 
@@ -95,10 +109,11 @@ def send_frame(client_socket, message: str):
 def _recv_exact(sock, n):
     """Lee exactamente n bytes del socket (TCP puede entregar los datos
     fragmentados en varias llamadas a recv)."""
-    data = b""
+    data = bytearray()
     while len(data) < n:
         chunk = sock.recv(n - len(data))
         if not chunk:
             return None
-        data += chunk
+        # Extender evita copiar todo lo recibido ante cada fragmento TCP.
+        data.extend(chunk)
     return data

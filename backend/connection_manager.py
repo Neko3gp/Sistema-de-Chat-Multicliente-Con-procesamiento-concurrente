@@ -61,7 +61,15 @@ class Connection:
                     if message is None:
                         return
                     started = time.monotonic()
-                    send_frame(self.socket, json.dumps(message))
+                    if message.get("type") == "file":
+                        # base64 ya fue validado: su alfabeto no necesita escapes
+                        # JSON. Serializar solo metadatos evita recorrer 7 MiB
+                        # con el codificador JSON mientras otros hilos esperan.
+                        metadata = {key: value for key, value in message.items() if key != "data"}
+                        payload = json.dumps(metadata)[:-1] + ', "data":"' + message["data"] + '"}'
+                    else:
+                        payload = json.dumps(message)
+                    send_frame(self.socket, payload)
                     if message.get("type") == "file":
                         data = message["data"]
                         size = len(data.rstrip("=")) * 6 // 8

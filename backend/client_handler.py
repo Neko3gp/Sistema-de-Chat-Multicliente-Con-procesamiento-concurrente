@@ -7,6 +7,7 @@ import binascii
 import json
 import logging
 import threading
+import time
 
 from websocket_handler import do_handshake, recv_frame
 from connection_manager import Connection
@@ -109,6 +110,11 @@ def handle_client(client_socket, address, connection_manager, message_queue):
                 _reply(connection, {"type": "error", "reason": "invalid_message"})
                 continue
             connection_manager.monitor_hub.record_message(len(raw.encode("utf-8")))
+            if msg_type == "file":
+                file_error = validate_file(message.get("data"))
+                if file_error:
+                    _reply(connection, {"type": "error", "reason": file_error})
+                    continue
             message["from"] = username
             message_queue.put({"message": message, "connection_manager": connection_manager})
 
@@ -122,6 +128,26 @@ def handle_client(client_socket, address, connection_manager, message_queue):
         else:
             client_socket.close()
             log_event("disconnect", username, reason=reason)
+
+
+def validate_file(data):
+    """Valida base64 en el lector del emisor, sin ocupar el worker compartido."""
+    if not isinstance(data, str):
+        return "invalid_message"
+    try:
+        # Los bloques son múltiplos de cuatro para respetar los grupos base64.
+        # Solo el último puede incluir padding; evita aceptar datos tras '='.
+        size = 0
+        for start in range(0, len(data), 64 * 1024):
+            chunk = data[start:start + 64 * 1024]
+            if start + len(chunk) < len(data) and "=" in chunk:
+                return "invalid_message"
+            size += len(base64.b64decode(chunk, validate=True))
+            if len(data) > 64 * 1024:
+                time.sleep(0)  # Da paso a los lectores y escritores de otros usuarios.
+    except (binascii.Error, ValueError):
+        return "invalid_message"
+    return "file_too_large" if size > MAX_FILE_SIZE else None
 
 
 def process_message(item):
@@ -145,17 +171,7 @@ def process_message(item):
                 _reply(sender, {"type": "error", "reason": "user_not_found"})
 
     elif msg_type == "file":
-        try:
-            file_size = len(base64.b64decode(message.get("data"), validate=True))
-        except (binascii.Error, ValueError, TypeError):
-            reason = "invalid_message"
-        else:
-            reason = "file_too_large" if file_size > MAX_FILE_SIZE else None
-        if reason:
-            sender = cm.get(message.get("from"))
-            if sender:
-                _reply(sender, {"type": "error", "reason": reason})
-            return
+        # El lector ya validó el archivo; este worker solo resuelve el destino.
         target = cm.get(message.get("to"))
         if target:
             target.send(message)

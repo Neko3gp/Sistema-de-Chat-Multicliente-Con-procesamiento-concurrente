@@ -1,0 +1,74 @@
+{
+  "load": {
+    "users": 20,
+    "duration_s": 30.0,
+    "rate": 2.0,
+    "sent": 2401,
+    "received": 6721,
+    "expected_deliveries": 6721,
+    "errors": [],
+    "rtt": {
+      "samples": 1200,
+      "p50_ms": 0.623,
+      "p95_ms": 1.579,
+      "max_ms": 93.48635599963018
+    },
+    "other_users_during_file": {
+      "samples": 4,
+      "p50_ms": 20.403,
+      "p95_ms": 74.541,
+      "max_ms": 83.89215799979866
+    },
+    "other_users_outside_file": {
+      "samples": 1076,
+      "p50_ms": 0.621,
+      "p95_ms": 1.567,
+      "max_ms": 1.9184010016033426
+    },
+    "file": {
+      "bytes": 5242880,
+      "integrity": true,
+      "sha256": "dba67a476fa78973aabb087f214a1010f3bebca053674e0af50dfe5a582112be",
+      "duration_ms": 105.21572899961029
+    }
+  },
+  "checks": {
+    "conteos de entregas": true,
+    "archivo íntegro": true,
+    "latencia de otros usuarios": false,
+    "user_list vacío": true,
+    "estadísticas finales": true,
+    "eventos de login/desconexión": true,
+    "contadores del monitor": true,
+    "estadísticas en vivo": true,
+    "archivo registrado": true,
+    "sin excepciones": true
+  },
+  "failures": [
+    "latencia de otros usuarios"
+  ],
+  "monitor": {
+    "samples": 16,
+    "events": {
+      "connect": 41,
+      "message": 2421,
+      "broadcast": 240,
+      "file": 1,
+      "disconnect": 20
+    },
+    "max_threads": 46,
+    "final_stats": {
+      "type": "monitor_stats",
+      "connected": 0,
+      "threads": 6,
+      "queue_size": 0,
+      "msgs_per_sec": 16.998,
+      "cpu_percent": 1.0,
+      "mem_mb": 28.46,
+      "msgs_total": 2401,
+      "bytes_total": 7454650
+    },
+    "users_final": []
+  },
+  "latency_threshold_ms": 21.567
+}

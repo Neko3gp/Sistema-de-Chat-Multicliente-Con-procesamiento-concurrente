@@ -16,6 +16,11 @@ Todos los envíos pasan por `Connection.send()` y su cola de salida de hasta
 ese cliente. El worker de entrada resuelve destinos y encola sin esperar a que
 el destinatario lea del socket.
 
+La validación base64 se realiza por bloques en el lector del emisor, antes de
+encolar el archivo. El escritor serializa sus metadatos e inserta el base64 ya
+validado; el desenmascarado WebSocket usa tablas de traducción por bloques.
+Estas operaciones evitan ocupar el worker compartido con el contenido grande.
+
 ```mermaid
 flowchart LR
     Cliente[Cliente web o Python] -->|WebSocket sobre TCP| Lector[Hilo lector por cliente]
@@ -143,6 +148,9 @@ red de demostración: TLS no forma parte de esta fase.
 por usuario; uno de cada cinco mensajes de carga es broadcast. Las sondas son
 mensajes privados al propio usuario con marca de tiempo monotónica del mismo
 proceso cliente, por lo que no se sincronizan relojes entre computadoras.
+Cuando hay archivo, sus dos participantes se atienden en un bucle/hilo aparte
+del cliente de carga, para que su enmascarado no detenga las sondas de los demás.
+Esta separación corresponde al script; el servidor sigue usando threading.
 
 El script comprueba contenido, orden, remitentes, destinatarios, duplicados,
 pérdidas e integridad SHA-256 del archivo. Los enviados cuentan mensajes y los
@@ -151,6 +159,10 @@ Reporta RTT p50/p95/máximo y compara los usuarios ajenos al archivo durante su
 transferencia y fuera de ella. La ventana va del inicio de envío al frame
 completo recibido; una sonda se incluye si su intervalo coincide con esa ventana.
 `null` y cero muestras indican que no hubo datos para estimar un percentil.
+El JSON identifica si el cliente usa la máscara Python o la extensión `speedups`.
+La corrida final utilizó la extensión C opcional de websockets 15.0.1; los
+primeros intentos usaron su alternativa Python. Los resultados documentan
+ambos entornos y el número de muestras, sin atribuir toda la mejora al servidor.
 
 ```bash
 python scripts/test_network.py

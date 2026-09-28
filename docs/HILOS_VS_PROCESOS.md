@@ -2,6 +2,10 @@
 
 Entorno: Python 3.14.7, Linux x86_64. Transporte: WebSocket manual sobre TCP local; método multiprocessing: spawn.
 
+Medición de T8 anterior a las optimizaciones de frames y archivos realizadas
+en T10. Se conserva la única corrida de cada configuración; no se volvió a
+medir el microbenchmark después de esos cambios.
+
 | Modelo | Clientes | Ecos | RTT p50 ms | RTT p95 ms | CPU total s | CPU % agregado | RSS total MiB |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | threads | 10 | 2000 | 0.120 | 0.157 | 0.0955 | 21.77 | 21.64 |

@@ -11,9 +11,11 @@ import json
 import math
 from pathlib import Path
 import time
+import threading
 import uuid
 
 from websockets.asyncio.client import connect
+from websockets.frames import apply_mask
 
 
 def percentile(values, fraction):
@@ -50,17 +52,35 @@ async def run(args):
     encoded_file = base64.b64encode(content).decode() if content else None
     if content:
         transfer["sha256"] = hashlib.sha256(content).hexdigest()
+    file_payload = json.dumps({"type": "file", "to": file_target,
+                               "filename": file_name, "data": encoded_file}) if content else None
+    file_loop = asyncio.new_event_loop() if content else None
+    file_thread = None
+    if file_loop is not None:
+        # El enmascarado de un frame grande no debe detener el bucle de las
+        # sondas ajenas al archivo. Los dos participantes usan otro bucle/hilo.
+        file_thread = threading.Thread(target=file_loop.run_forever, name="load-file-io", daemon=True)
+        file_thread.start()
+
+    async def io_call(name, operation):
+        """Ejecuta la E/S de los participantes del archivo en su propio bucle."""
+        if file_loop is not None and name in {names[0], file_target}:
+            return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(operation, file_loop))
+        return await operation
 
     async def prepare(name):
         """Abre WebSocket sin compresión ni ping y valida el rol de chat."""
-        ws = await connect(f"ws://{args.host}:{args.port}", compression=None,
-                           ping_interval=None, proxy=None, max_size=8 * 1024 * 1024,
-                           open_timeout=15, close_timeout=1)
+        async def open_socket():
+            """Construye el transporte dentro del bucle que lo atenderá."""
+            return await connect(f"ws://{args.host}:{args.port}", compression=None,
+                                 ping_interval=None, proxy=None, max_size=8 * 1024 * 1024,
+                                 open_timeout=15, close_timeout=1)
+        ws = await io_call(name, open_socket())
         sockets[name] = ws
-        await ws.send(json.dumps({"type": "login", "username": name, "password": "test1234"}))
+        await io_call(name, ws.send(json.dumps({"type": "login", "username": name, "password": "test1234"})))
         async with asyncio.timeout(20):
             while True:
-                reply = json.loads(await ws.recv())
+                reply = json.loads(await io_call(name, ws.recv()))
                 if reply["type"] == "user_list":
                     continue
                 if reply.get("type") != "login_result" or not reply.get("ok") or reply.get("role") != "user":
@@ -71,7 +91,8 @@ async def run(args):
         """Verifica contenido, destinatarios, duplicados, orden y RTT propio."""
         nonlocal received
         try:
-            async for raw in sockets[name]:
+            while True:
+                raw = await io_call(name, sockets[name].recv())
                 arrived = time.perf_counter()
                 message = json.loads(raw)
                 kind = message.get("type")
@@ -97,6 +118,10 @@ async def run(args):
                     continue
                 if kind not in {"private_message", "broadcast"}:
                     raise AssertionError(f"Tipo inesperado: {kind}")
+                if message.get("from") not in names:
+                    # Los usuarios reales pueden conversar durante la demo;
+                    # sus mensajes no forman parte de esta corrida de carga.
+                    continue
                 payload = json.loads(message["message"])
                 if payload.get("run") != run_id:
                     continue
@@ -133,7 +158,7 @@ async def run(args):
         if kind == "private_message":
             message["to"] = target
         expected_deliveries += len(targets)
-        await sockets[name].send(json.dumps(message))
+        await io_call(name, sockets[name].send(json.dumps(message)))
         sent += 1
 
     async def generate(name, index, started):
@@ -155,11 +180,9 @@ async def run(args):
         if not content:
             return
         await asyncio.sleep(max(0, started + args.duration / 2 - time.perf_counter()))
-        payload = json.dumps({"type": "file", "to": file_target,
-                              "filename": file_name, "data": encoded_file})
         transfer["start"] = time.perf_counter()
         expected_deliveries += 1
-        await sockets[names[0]].send(payload)
+        await io_call(names[0], sockets[names[0]].send(file_payload))
         sent += 1
 
     try:
@@ -184,7 +207,11 @@ async def run(args):
         for reader in readers:
             reader.cancel()
         await asyncio.gather(*readers, return_exceptions=True)
-        await asyncio.gather(*(ws.close() for ws in sockets.values()), return_exceptions=True)
+        await asyncio.gather(*(io_call(name, ws.close()) for name, ws in sockets.items()), return_exceptions=True)
+        if file_loop is not None:
+            file_loop.call_soon_threadsafe(file_loop.stop)
+            file_thread.join(timeout=2)
+            file_loop.close()
     during, outside = [], []
     for name, begin, end, rtt in rtts:
         if content and name in {names[0], file_target}:
@@ -193,6 +220,7 @@ async def run(args):
                     and begin <= transfer["end"] and end >= transfer["start"])
         (during if overlaps else outside).append(rtt)
     report = {"users": args.users, "duration_s": args.duration, "rate": args.rate,
+              "client_mask_implementation": apply_mask.__module__,
               "sent": sent, "received": received, "expected_deliveries": expected_deliveries,
               "errors": errors, "rtt": distribution([item[3] for item in rtts]),
               "other_users_during_file": distribution(during),
