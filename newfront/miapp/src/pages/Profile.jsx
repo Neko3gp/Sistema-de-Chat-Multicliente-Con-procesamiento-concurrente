@@ -1,0 +1,252 @@
+import { useState } from "react";
+import { getInitials, getNameColor } from "../utils/avatar";
+
+function formatLastSeen(date) {
+  if (!date) return "Desconectado";
+  const value = date instanceof Date ? date : new Date(date);
+  const time = value.toLocaleTimeString("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const day = value.toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  });
+  return `Última vez ${day} a las ${time}`;
+}
+
+export default function Profile({
+  mode = "own",
+  profile,
+  onSave,
+  onBack,
+  onLogout,
+}) {
+  const isOwn = mode === "own";
+
+  const [username, setUsername] = useState(profile.username || "");
+  const [email, setEmail] = useState(profile.email || "");
+  const [password, setPassword] = useState(profile.password || "");
+  const [description, setDescription] = useState(profile.description || "");
+  const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl || "");
+  const [urlDraft, setUrlDraft] = useState(profile.avatarUrl || "");
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
+  const [editingPhoto, setEditingPhoto] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const displayName = isOwn ? username : profile.username;
+  const displayEmail = isOwn ? email : profile.email;
+  const displayDescription = isOwn ? description : profile.description;
+  const displayAvatar = isOwn ? avatarUrl : profile.avatarUrl;
+  const color = getNameColor(displayName || "Usuario");
+  const isOnline = Boolean(profile.isOnline);
+  const statusText = isOnline
+    ? "en línea"
+    : formatLastSeen(profile.lastSeen);
+
+  function handleSave(event) {
+    event.preventDefault();
+    onSave({
+      username: username.trim() || profile.username,
+      email: email.trim(),
+      password,
+      description: description.trim(),
+      avatarUrl: avatarUrl.trim(),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  }
+
+  function applyPhotoUrl() {
+    setAvatarUrl(urlDraft.trim());
+    setEditingPhoto(false);
+    setPhotoMenuOpen(false);
+  }
+
+  function removePhoto() {
+    setAvatarUrl("");
+    setUrlDraft("");
+    setEditingPhoto(false);
+    setPhotoMenuOpen(false);
+  }
+
+  function openChangePhoto() {
+    setUrlDraft(avatarUrl);
+    setEditingPhoto(true);
+  }
+
+  return (
+    <div className="profile-page">
+      <header className="profile-topbar">
+        <button type="button" className="back-btn" onClick={onBack} aria-label="Volver">
+          ←
+        </button>
+        <h1>{isOwn ? "Perfil" : "Info. del contacto"}</h1>
+      </header>
+
+      <section className="profile-hero">
+        <div className="profile-photo-wrap">
+          <div className="profile-photo-frame">
+            {displayAvatar ? (
+              <img
+                className="profile-photo"
+                src={displayAvatar}
+                alt="Foto de perfil"
+              />
+            ) : (
+              <div
+                className="profile-photo placeholder"
+                style={{ background: color }}
+              >
+                {getInitials(displayName || "Usuario")}
+              </div>
+            )}
+
+            {isOwn ? (
+              <button
+                type="button"
+                className="photo-edit-btn"
+                aria-label="Editar foto de perfil"
+                onClick={() => {
+                  setPhotoMenuOpen((open) => !open);
+                  if (editingPhoto) setEditingPhoto(false);
+                }}
+              >
+                ✎
+              </button>
+            ) : null}
+          </div>
+
+          {isOwn && photoMenuOpen ? (
+            <div className="profile-photo-actions">
+              <button type="button" onClick={openChangePhoto}>
+                {avatarUrl ? "Cambiar foto" : "Agregar foto"}
+              </button>
+              {avatarUrl ? (
+                <button type="button" className="danger" onClick={removePhoto}>
+                  Eliminar
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {isOwn && editingPhoto ? (
+          <div className="profile-url-box">
+            <label>
+              URL de la foto
+              <input
+                type="url"
+                placeholder="https://ejemplo.com/foto.jpg"
+                value={urlDraft}
+                onChange={(event) => setUrlDraft(event.target.value)}
+              />
+            </label>
+            <div className="profile-url-actions">
+              <button type="button" onClick={applyPhotoUrl}>
+                Usar URL
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setUrlDraft(avatarUrl);
+                  setEditingPhoto(false);
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <h2 className="profile-display-name">{displayName || "Usuario"}</h2>
+        <p className={isOnline ? "profile-status online" : "profile-status"}>
+          {isOwn ? displayEmail || "Sin correo" : statusText}
+        </p>
+        {isOwn ? (
+          <p className="profile-display-description">
+            {displayDescription || "Sin descripción"}
+          </p>
+        ) : null}
+      </section>
+
+      {!isOwn ? (
+        <section className="profile-contact-info">
+          <div className="profile-info-row">
+            <span>Nombre de usuario</span>
+            <strong>{displayName || "Usuario"}</strong>
+          </div>
+          <div className="profile-info-row">
+            <span>Correo</span>
+            <strong>{displayEmail || "Sin correo"}</strong>
+          </div>
+          <div className="profile-info-row">
+            <span>Estado</span>
+            <strong className={isOnline ? "online" : ""}>{statusText}</strong>
+          </div>
+        </section>
+      ) : (
+        <>
+          <form className="profile-form" onSubmit={handleSave}>
+            <label>
+              <span>Nombre de usuario</span>
+              <small>Este nombre aparece en tus chats</small>
+              <input
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                required
+              />
+            </label>
+
+            <label>
+              <span>Descripción</span>
+              <small>Info visible en tu perfil, como en WhatsApp</small>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Hey ahí estoy usando Chat"
+                maxLength={140}
+              />
+            </label>
+
+            <label>
+              <span>Correo</span>
+              <small>No visible para otros usuarios</small>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="correo@ejemplo.com"
+              />
+            </label>
+
+            <label>
+              <span>Contraseña</span>
+              <small>Solo tú puedes verla aquí</small>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="••••••••"
+              />
+            </label>
+
+            {saved ? <p className="profile-saved">Cambios guardados</p> : null}
+
+            <button type="submit" className="profile-save-btn">
+              Guardar cambios
+            </button>
+          </form>
+
+          <button type="button" className="profile-logout-btn" onClick={onLogout}>
+            Cerrar sesión
+          </button>
+        </>
+      )}
+    </div>
+  );
+}

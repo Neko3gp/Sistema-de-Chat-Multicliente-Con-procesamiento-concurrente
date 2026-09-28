@@ -1,0 +1,51 @@
+import { getInitials, getNameColor } from "../utils/avatar";
+
+export default function Message({ message, currentUser }) {
+  const mine = message.from === currentUser;
+  const isPrivate = message.type === "private_message";
+  const isGroup = message.type === "broadcast";
+  const author = message.from || "sistema";
+  const authorColor = getNameColor(author);
+  const time = new Date(message.at || Date.now()).toLocaleTimeString("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return (
+    <div className={mine ? "bubble-row mine" : "bubble-row"}>
+      {!mine ? (
+        <span
+          className="bubble-avatar"
+          style={{ background: authorColor }}
+          aria-hidden="true"
+        >
+          {getInitials(author)}
+        </span>
+      ) : null}
+
+      <article className={mine ? "bubble mine" : "bubble"}>
+        {!mine ? (
+          <header className="bubble-head">
+            <span
+              className={isGroup ? "bubble-author group" : "bubble-author"}
+              style={{ color: authorColor }}
+            >
+              {author}
+            </span>
+            {isPrivate ? <span className="bubble-tag">privado</span> : null}
+          </header>
+        ) : null}
+
+        <p className="bubble-text">{message.message}</p>
+        <footer className="bubble-meta">
+          <time>{time}</time>
+          {mine ? (
+            <span className="ticks" aria-hidden="true">
+              ✓✓
+            </span>
+          ) : null}
+        </footer>
+      </article>
+    </div>
+  );
+}

@@ -1,0 +1,214 @@
+:root,
+[data-theme="dark"] {
+  /* Brand / actions */
+  --color-primary: #00a884;
+  --color-primary-hover: #06cf9c;
+  --color-primary-muted: #0a5c4c;
+  --color-primary-strong: #005c4b;
+  --color-primary-on: #111b21;
+
+  --color-secondary: #53bdeb;
+  --color-secondary-soft: #a7c8c0;
+
+  /* Surfaces */
+  --color-bg: #0b141a;
+  --color-surface: #111b21;
+  --color-surface-elevated: #202c33;
+  --color-surface-hover: #2a3942;
+  --color-panel: #202c33;
+
+  /* Text */
+  --color-text: #e9edef;
+  --color-text-muted: #8696a0;
+  --color-text-soft: #aebac1;
+  --color-text-inverse: #111b21;
+  --color-text-on-primary: #111b21;
+
+  /* Borders / dividers */
+  --color-border: #222d34;
+  --color-border-strong: #3b4a54;
+
+  /* Feedback */
+  --color-danger: #f87171;
+  --color-danger-strong: #b91c1c;
+  --color-success: #15803d;
+
+  /* Auth (light screens) */
+  --color-auth-bg: #f8fafc;
+  --color-auth-surface: #ffffff;
+  --color-auth-text: #0f172a;
+  --color-auth-text-muted: #64748b;
+  --color-auth-text-soft: #334155;
+  --color-auth-border: #e2e8f0;
+  --color-auth-border-strong: #cbd5e1;
+  --color-auth-accent-a: #dbeafe;
+  --color-auth-accent-b: #fde68a;
+
+  /* Misc */
+  --color-avatar-fallback: #6b7c85;
+  --color-overlay-soft: rgba(255, 255, 255, 0.08);
+  --color-overlay-dark: rgba(0, 0, 0, 0.18);
+  --color-shadow: rgba(0, 0, 0, 0.35);
+  --color-primary-glow: rgba(0, 168, 132, 0.05);
+  --color-white-glow: rgba(255, 255, 255, 0.03);
+
+  /* Liquid glass */
+  --glass-bg: rgba(17, 27, 33, 0.55);
+  --glass-bg-strong: rgba(32, 44, 51, 0.62);
+  --glass-bg-soft: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-border-soft: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --glass-blur: 22px;
+  --glass-saturate: 165%;
+  --glass-backdrop: rgba(0, 0, 0, 0.35);
+  --bg-glow-a: rgba(0, 168, 132, 0.28);
+  --bg-glow-b: rgba(83, 189, 235, 0.18);
+  --bg-glow-c: rgba(124, 58, 237, 0.14);
+}
+
+[data-theme="light"] {
+  --color-primary: #008069;
+  --color-primary-hover: #017561;
+  --color-primary-muted: #d1f4eb;
+  --color-primary-strong: #d9fdd3;
+  --color-primary-on: #ffffff;
+
+  --color-secondary: #027eb5;
+  --color-secondary-soft: #54656f;
+
+  --color-bg: #efeae2;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f0f2f5;
+  --color-surface-hover: #e9edef;
+  --color-panel: #f0f2f5;
+
+  --color-text: #111b21;
+  --color-text-muted: #667781;
+  --color-text-soft: #54656f;
+  --color-text-inverse: #ffffff;
+  --color-text-on-primary: #ffffff;
+
+  --color-border: #e9edef;
+  --color-border-strong: #d1d7db;
+
+  --color-danger: #ea0038;
+  --color-danger-strong: #b91c1c;
+  --color-success: #008069;
+
+  --color-avatar-fallback: #dfe5e7;
+  --color-overlay-soft: rgba(0, 0, 0, 0.06);
+  --color-overlay-dark: rgba(0, 0, 0, 0.08);
+  --color-shadow: rgba(0, 0, 0, 0.12);
+  --color-primary-glow: rgba(0, 128, 105, 0.08);
+  --color-white-glow: rgba(255, 255, 255, 0.4);
+
+  --glass-bg: rgba(255, 255, 255, 0.52);
+  --glass-bg-strong: rgba(255, 255, 255, 0.68);
+  --glass-bg-soft: rgba(255, 255, 255, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-border-soft: rgba(255, 255, 255, 0.4);
+  --glass-highlight: rgba(255, 255, 255, 0.8);
+  --glass-shadow: 0 12px 40px rgba(17, 27, 33, 0.12);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --glass-blur: 20px;
+  --glass-saturate: 170%;
+  --glass-backdrop: rgba(15, 23, 42, 0.28);
+  --bg-glow-a: rgba(0, 128, 105, 0.22);
+  --bg-glow-b: rgba(59, 130, 246, 0.16);
+  --bg-glow-c: rgba(251, 191, 36, 0.18);
+}
+
+[data-theme="midnight"] {
+  --color-primary: #7c9cff;
+  --color-primary-hover: #9bb2ff;
+  --color-primary-muted: #31407a;
+  --color-primary-strong: #3d4f9a;
+  --color-primary-on: #0b1020;
+
+  --color-secondary: #8be9fd;
+  --color-secondary-soft: #a8b3d9;
+
+  --color-bg: #0b1020;
+  --color-surface: #12182b;
+  --color-surface-elevated: #1a2238;
+  --color-surface-hover: #243049;
+  --color-panel: #1a2238;
+
+  --color-text: #e8ecff;
+  --color-text-muted: #9aa6c7;
+  --color-text-soft: #b7c0dd;
+  --color-text-inverse: #0b1020;
+  --color-text-on-primary: #0b1020;
+
+  --color-border: #243049;
+  --color-border-strong: #364466;
+
+  --color-danger: #ff7b9c;
+  --color-danger-strong: #ff4d6d;
+  --color-success: #69db9e;
+
+  --color-avatar-fallback: #364466;
+  --color-overlay-soft: rgba(255, 255, 255, 0.08);
+  --color-overlay-dark: rgba(0, 0, 0, 0.25);
+  --color-shadow: rgba(0, 0, 0, 0.4);
+  --color-primary-glow: rgba(124, 156, 255, 0.1);
+  --color-white-glow: rgba(255, 255, 255, 0.03);
+
+  --glass-bg: rgba(18, 24, 43, 0.55);
+  --glass-bg-strong: rgba(26, 34, 56, 0.65);
+  --glass-bg-soft: rgba(124, 156, 255, 0.08);
+  --glass-border: rgba(232, 236, 255, 0.18);
+  --glass-border-soft: rgba(232, 236, 255, 0.1);
+  --glass-highlight: rgba(232, 236, 255, 0.24);
+  --glass-shadow: 0 14px 44px rgba(0, 0, 0, 0.45);
+  --glass-inset: inset 0 1px 0 rgba(232, 236, 255, 0.2);
+  --glass-blur: 24px;
+  --glass-saturate: 175%;
+  --glass-backdrop: rgba(5, 8, 18, 0.45);
+  --bg-glow-a: rgba(124, 156, 255, 0.3);
+  --bg-glow-b: rgba(139, 233, 253, 0.16);
+  --bg-glow-c: rgba(192, 132, 252, 0.18);
+}
+
+:root {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--color-text);
+  background: var(--color-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100svh;
+  color: var(--color-text);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--bg-glow-a), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, var(--bg-glow-b), transparent 50%),
+    radial-gradient(800px 500px at 50% 110%, var(--bg-glow-c), transparent 55%),
+    var(--color-bg);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100svh;
+  width: 100%;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
