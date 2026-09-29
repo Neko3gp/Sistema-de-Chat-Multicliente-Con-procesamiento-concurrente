@@ -1,0 +1,13 @@
+# Backend en Render (Web Service con WebSockets).
+# Dashboard: New → Blueprint → este repo, o crea el servicio a mano con estos valores.
+services:
+  - type: web
+    name: chat-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CHAT_ADMIN_PASSWORD
+        value: admin123
