@@ -1,0 +1,216 @@
+/**
+ * Página y diálogos de perfil de usuario.
+ */
+.icon-btn.profile-entry {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sidebar-mini-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.sidebar-mini-avatar.initials {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-inverse);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.profile-page {
+  min-height: 100%;
+  background: transparent;
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  padding-top: var(--safe-top, calc(env(safe-area-inset-top, 0px) + 16px));
+  background: var(--glass-bg-strong);
+  border-bottom: 1px solid var(--glass-border-soft);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--glass-inset);
+}
+
+.profile-topbar .back-btn {
+  display: grid;
+  place-items: center;
+}
+
+.profile-topbar h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--color-text);
+}
+
+.profile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 20px 20px;
+  background: var(--glass-bg);
+  border-bottom: 8px solid transparent;
+  text-align: center;
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.profile-photo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-photo-frame {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+.profile-photo {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-inset);
+}
+
+.profile-photo.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-inverse);
+  font-size: 3rem;
+  font-weight: 700;
+}
+
+.photo-edit-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.15rem;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  display: grid;
+  place-items: center;
+}
+
+.profile-photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(220px, 100%);
+}
+
+.profile-photo-actions button,
+.profile-url-actions button,
+.profile-save-btn,
+.profile-logout-btn {
+  border-radius: 8px;
+  padding: 9px 14px;
+  font: inherit;
+}
+
+.profile-photo-actions button {
+  width: 100%;
+}
+
+.profile-url-box {
+  width: min(420px, 100%);
+  text-align: left;
+}
+
+.profile-url-box label,
+.profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.profile-url-box input,
+.profile-form input,
+.profile-form textarea {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border-soft);
+  border-radius: 12px;
+  background: var(--glass-bg-soft);
+  color: var(--color-text);
+  font-size: 16px;
+  resize: vertical;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.profile-display-description {
+  margin: 0;
+  max-width: 420px;
+  color: var(--color-text-soft);
+  font-size: 0.95rem;
+}
+
+.profile-url-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.profile-display-name {
+  margin: 8px 0 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.profile-display-email {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 20px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.profile-form label span {
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.profile-form label small {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.profile-saved {
+  margin: 0;
+  color: var(--color-primary);
+}
+
+.profile-logout-btn {
+  margin: 16px 20px 28px;
+}
+

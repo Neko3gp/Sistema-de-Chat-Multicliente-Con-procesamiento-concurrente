@@ -17,6 +17,12 @@ def message_metadata(message):
     detail = {"message_type": kind, "to": message.get("to"),
               "scope": "group" if message.get("groupId") else
               "private" if message.get("to") else "general"}
+    message_id = message.get("id")
+    if isinstance(message_id, str) and message_id.strip():
+        detail["message_id"] = message_id.strip()
+    group_id = message.get("groupId")
+    if isinstance(group_id, str) and group_id.strip():
+        detail["groupId"] = group_id.strip()
     if kind == "file":
         name = str(message.get("filename") or "")
         mime = str(message.get("mimeType") or "").lower()
@@ -28,6 +34,19 @@ def message_metadata(message):
             category = "audio"
         detail.update(file_kind=category, filename=name)
     return detail
+
+
+def log_chat_trace(user, stage, **detail):
+    """Ciclo de mensaje para el panel de trazas (no es métrica de infraestructura)."""
+    log_event("chat_trace", user, stage=stage, **detail)
+    # Offline: guardar para emitir "entregado al reconectar" cuando vuelva.
+    if stage != "queued" or not isinstance(user, str) or not user.strip():
+        return
+    recipient = detail.get("to")
+    if not isinstance(recipient, str) or not recipient.strip():
+        return
+    import database
+    database.enqueue_pending_delivery(recipient.strip(), user.strip(), dict(detail))
 
 
 class RecentLogHandler(logging.Handler):

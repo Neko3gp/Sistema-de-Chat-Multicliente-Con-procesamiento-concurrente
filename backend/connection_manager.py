@@ -7,7 +7,7 @@ import threading
 import time
 
 from websocket_handler import send_frame
-from server_log import log_event, message_metadata
+from server_log import log_chat_trace, log_event, message_metadata
 import database
 
 
@@ -78,10 +78,12 @@ class Connection:
                         log_event("file", message.get("from"), **detail,
                                   direction="sent", bytes=size,
                                   duration_ms=round((time.monotonic() - started) * 1000, 3))
+                        log_chat_trace(message.get("from"), "delivered", **detail)
                     elif message.get("type") in {"private_message", "broadcast", "group_message", "group_notice"}:
                         detail = {**message_metadata(message), "to": self.username}
                         log_event("message_sent", message.get("from"), **detail,
                                   direction="sent", bytes=len(payload.encode("utf-8")))
+                        log_chat_trace(message.get("from"), "delivered", **detail)
                 finally:
                     self._outgoing.task_done()
         except (OSError, TypeError, ValueError) as error:

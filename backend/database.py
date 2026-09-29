@@ -67,7 +67,19 @@ def init_db():
                 FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE
             )
         """)
-
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_chat_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_deliveries_recipient "
+            "ON pending_chat_deliveries(recipient)"
+        )
 
 def hash_password(password):
     """Genera PBKDF2-SHA256 con sal aleatoria de 16 bytes para cada contraseña."""
@@ -556,3 +568,57 @@ def get_chat_history(username, limit=HISTORY_LIMIT):
         message["at"] = created_at
         history.append(message)
     return history
+
+
+def enqueue_pending_delivery(recipient, sender, detail):
+    """Marca un mensaje para emitir entrega al reconectar el destinatario."""
+    if not isinstance(recipient, str) or not recipient.strip():
+        return False
+    if not isinstance(sender, str) or not sender.strip():
+        return False
+    payload = json.dumps(detail or {}, ensure_ascii=False)
+    created_at = datetime.now(timezone.utc).isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute(
+            """
+            INSERT INTO pending_chat_deliveries
+                (recipient, sender, detail, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (recipient.strip(), sender.strip(), payload, created_at),
+        )
+    return True
+
+
+def claim_pending_deliveries(recipient):
+    """Devuelve y elimina las entregas pendientes del usuario que reconecta."""
+    if not isinstance(recipient, str) or not recipient.strip():
+        return []
+    name = recipient.strip()
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        rows = conn.execute(
+            """
+            SELECT id, sender, detail
+            FROM pending_chat_deliveries
+            WHERE recipient = ?
+            ORDER BY id ASC
+            """,
+            (name,),
+        ).fetchall()
+        if rows:
+            conn.execute(
+                "DELETE FROM pending_chat_deliveries WHERE recipient = ?",
+                (name,),
+            )
+    claimed = []
+    for _row_id, sender, payload in rows:
+        try:
+            detail = json.loads(payload)
+        except json.JSONDecodeError:
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        detail.setdefault("to", name)
+        detail["sender"] = sender
+        claimed.append(detail)
+    return claimed
