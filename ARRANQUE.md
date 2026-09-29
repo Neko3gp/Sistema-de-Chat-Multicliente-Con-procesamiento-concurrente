@@ -29,7 +29,7 @@ python main.py --host 0.0.0.0 --port 5001
 En **otra** terminal:
 
 ```bash
-cd newfront/miapp
+cd frontend/miapp
 npm install
 npm run dev -- --host 0.0.0.0
 ```

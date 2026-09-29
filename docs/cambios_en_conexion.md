@@ -80,13 +80,13 @@ Archivos back:
 - Usuario de sesión no se renombra desde la UI (lo fija el login)
 
 Archivos front:
-- `newfront/miapp/src/services/socket.js` (`sendUpdateProfile`)
-- `newfront/miapp/src/App.jsx`
-- `newfront/miapp/src/pages/Profile.jsx`
-- `newfront/miapp/src/pages/Home.jsx`
-- `newfront/miapp/src/components/Sidebar.jsx`
-- `newfront/miapp/src/components/Message.jsx`
-- `newfront/miapp/src/components/FileMessage.jsx`
+- `frontend/miapp/src/services/socket.js` (`sendUpdateProfile`)
+- `frontend/miapp/src/App.jsx`
+- `frontend/miapp/src/pages/Profile.jsx`
+- `frontend/miapp/src/pages/Home.jsx`
+- `frontend/miapp/src/components/Sidebar.jsx`
+- `frontend/miapp/src/components/Message.jsx`
+- `frontend/miapp/src/components/FileMessage.jsx`
 
 ---
 
@@ -111,10 +111,10 @@ contraseña con demasiada frecuencia.
 - Tras 1 hora sin renovar, sí pide login de nuevo.
 
 Archivos front:
-- `newfront/miapp/src/utils/session.js`
-- `newfront/miapp/src/services/socket.js` (cierre silencioso al reconectar)
-- `newfront/miapp/src/App.jsx`
-- `newfront/miapp/src/App.css` (banner)
+- `frontend/miapp/src/utils/session.js`
+- `frontend/miapp/src/services/socket.js` (cierre silencioso al reconectar)
+- `frontend/miapp/src/App.jsx`
+- `frontend/miapp/src/App.css` (banner)
 
 ### Backend
 Sin cambios de protocolo: se reutiliza el mismo `login` al reconectar.
@@ -173,13 +173,13 @@ Archivos back:
   qué no habías abierto
 
 Archivos front:
-- `newfront/miapp/src/components/MessageStatus.jsx`
-- `newfront/miapp/src/components/IncomingToast.jsx`
-- `newfront/miapp/src/components/NotificationTray.jsx`
-- `newfront/miapp/src/utils/messageStatus.js`
-- `newfront/miapp/src/utils/unreadStore.js`
-- `newfront/miapp/src/services/socket.js` (`sendReadReceipt`)
-- `newfront/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
+- `frontend/miapp/src/components/MessageStatus.jsx`
+- `frontend/miapp/src/components/IncomingToast.jsx`
+- `frontend/miapp/src/components/NotificationTray.jsx`
+- `frontend/miapp/src/utils/messageStatus.js`
+- `frontend/miapp/src/utils/unreadStore.js`
+- `frontend/miapp/src/services/socket.js` (`sendReadReceipt`)
+- `frontend/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
 
 ---
 
@@ -228,12 +228,12 @@ Archivos back:
 - Si te llega un `group_message` de un grupo nuevo, se añade solo a tu lista
 
 Archivos front:
-- `newfront/miapp/src/components/ComposeMenu.jsx`
-- `newfront/miapp/src/components/NewMessageDialog.jsx`
-- `newfront/miapp/src/components/NewGroupDialog.jsx`
-- `newfront/miapp/src/utils/localChats.js`
-- `newfront/miapp/src/services/socket.js` (`requestDirectory`, `sendGroupMessage`)
-- `newfront/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
+- `frontend/miapp/src/components/ComposeMenu.jsx`
+- `frontend/miapp/src/components/NewMessageDialog.jsx`
+- `frontend/miapp/src/components/NewGroupDialog.jsx`
+- `frontend/miapp/src/utils/localChats.js`
+- `frontend/miapp/src/services/socket.js` (`requestDirectory`, `sendGroupMessage`)
+- `frontend/miapp/src/App.jsx`, `App.css`, `Sidebar.jsx`, `Home.jsx`
 
 ---
 
@@ -275,10 +275,10 @@ layout y “desaparecía” el contacto.
   (`visualViewport`) para que el chat no salte al abrir el teclado
 
 Archivos:
-- `newfront/miapp/src/services/socket.js`
-- `newfront/miapp/.env.example`
-- `newfront/miapp/index.html`
-- `newfront/miapp/src/utils/viewport.js`
+- `frontend/miapp/src/services/socket.js`
+- `frontend/miapp/.env.example`
+- `frontend/miapp/index.html`
+- `frontend/miapp/src/utils/viewport.js`
 - `README.md` (arranque / LAN)
 
 ### Backend
@@ -301,8 +301,8 @@ iniciar sesión.
 - El historial recibido se carga después del login mediante el evento `history`
 
 Archivos front:
-- `newfront/miapp/src/utils/localChats.js`
-- `newfront/miapp/src/App.jsx`
+- `frontend/miapp/src/utils/localChats.js`
+- `frontend/miapp/src/App.jsx`
 
 ### Backend
 SQLite guarda usuarios, perfiles e historial de mensajes. Se conservan los

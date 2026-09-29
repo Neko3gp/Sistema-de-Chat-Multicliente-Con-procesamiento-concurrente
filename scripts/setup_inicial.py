@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
-FRONT = ROOT / "newfront" / "miapp"
+FRONT = ROOT / "frontend" / "miapp"
 SCRIPTS = ROOT / "scripts"
 
 

@@ -19,7 +19,7 @@ que el sistema sea un producto de producción.
 | Requisito | Estado | Evidencia |
 | --- | --- | --- |
 | Conectarse y enviar/recibir en tiempo real | Implementado | React, cliente CLI y WebSocket manual |
-| Interfaz para escribir y visualizar | Implementado | `newfront/miapp/src/pages/Home.jsx` |
+| Interfaz para escribir y visualizar | Implementado | `frontend/miapp/src/pages/Home.jsx` |
 | Transferencia de archivos | Implementado | Base64, límite de 5 MiB y `file` |
 | Historial de chats | Implementado | SQLite, evento `history` y recuperación al login |
 

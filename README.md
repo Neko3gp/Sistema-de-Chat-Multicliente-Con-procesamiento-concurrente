@@ -121,7 +121,7 @@ conectarse desde otro equipo se usa esa IP, nunca `0.0.0.0` ni `localhost`.
 En otra terminal:
 
 ```bash
-cd newfront/miapp
+cd frontend/miapp
 npm install
 npm run dev -- --host 0.0.0.0
 ```
@@ -135,7 +135,7 @@ VITE_WS_PORT=5000 npm run dev -- --host 0.0.0.0
 ```
 
 También se puede definir `VITE_WS_URL=ws://192.168.1.10:5001` en un archivo
-`.env` dentro de `newfront/miapp`.
+`.env` dentro de `frontend/miapp`.
 
 ## 5. Uso de la aplicación
 
@@ -234,8 +234,8 @@ demostrar el backend aunque no se quiera abrir la interfaz React.
 
 ```bash
 python -m compileall -q backend scripts
-node --test newfront/miapp/src/utils/monitor.test.js
-cd newfront/miapp
+node --test frontend/miapp/src/utils/monitor.test.js
+cd frontend/miapp
 npm run build
 ```
 
@@ -270,7 +270,7 @@ archivo de 5 MiB. La evidencia y sus limitaciones están en
 
 - `backend/chat.db`: usuarios, perfiles e historial de mensajes.
 - `logs/server.log`: eventos técnicos del servidor.
-- `newfront/miapp/localStorage`: sesión, contactos, grupos, no leídos y
+- `frontend/miapp/localStorage`: sesión, contactos, grupos, no leídos y
   preferencias del navegador.
 
 No se deben subir credenciales, bases de prueba ni logs con información real.

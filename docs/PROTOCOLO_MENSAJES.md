@@ -403,7 +403,7 @@ proyecto. `CHAT_LOG_DIR` permite cambiar ese directorio (usado por las pruebas).
 ## Notas para el frontend
 
 - Todo el ciclo de vida se maneja con un solo `WebSocket` abierto por sesión
-  (ver `newfront/miapp/src/services/socket.js`).
+  (ver `frontend/miapp/src/services/socket.js`).
 - No hay que reconectar entre mensajes: se registra o inicia sesión usando el
   mismo socket y, solo después de un `login_result` exitoso, se envían mensajes
   de chat.

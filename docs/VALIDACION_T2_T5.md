@@ -29,11 +29,11 @@ para conservar la cobertura de límites y saturación.
 
 ## Advertencias de la interfaz
 
-- `newfront/miapp/src/components/Message.jsx:9`: `Date.now()` durante render.
-- `newfront/miapp/src/components/FileMessage.jsx:12`: `Date.now()` durante render.
-- `newfront/miapp/src/components/Sidebar.jsx:58`: parámetro `onLogout` sin usar.
+- `frontend/miapp/src/components/Message.jsx:9`: `Date.now()` durante render.
+- `frontend/miapp/src/components/FileMessage.jsx:12`: `Date.now()` durante render.
+- `frontend/miapp/src/components/Sidebar.jsx:58`: parámetro `onLogout` sin usar.
 
-Build y lint se ejecutaron desde `newfront/miapp` sobre el árbol de trabajo
+Build y lint se ejecutaron desde `frontend/miapp` sobre el árbol de trabajo
 local. Los cambios previos del usuario en `package.json` y `package-lock.json`
 se conservaron y no se incluyen en el commit de validación. Estas comprobaciones
 no equivalen a una prueba de interfaz en navegador ni del monitor React, que

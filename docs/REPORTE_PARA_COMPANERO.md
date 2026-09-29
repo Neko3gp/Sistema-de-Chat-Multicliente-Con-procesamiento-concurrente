@@ -18,7 +18,7 @@ python backend/main.py --host 0.0.0.0 --port 5001
 En otra terminal:
 
 ```bash
-cd newfront/miapp
+cd frontend/miapp
 npm install
 VITE_WS_PORT=5001 npm run dev -- --host 0.0.0.0
 ```
@@ -55,5 +55,5 @@ local como garantía de rendimiento para cualquier red.
 El monitor React está integrado en `dev`, el historial persistente usa SQLite y
 el proyecto se valida con `npm run build` y `python -m compileall`. Antes de
 probar una rama recién descargada se debe ejecutar `npm install` dentro de
-`newfront/miapp` y reiniciar el backend para que aplique las migraciones de la
+`frontend/miapp` y reiniciar el backend para que aplique las migraciones de la
 base de datos.
